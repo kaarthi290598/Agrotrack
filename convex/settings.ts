@@ -16,23 +16,24 @@ export const get = query({
         .query("settings")
         .withIndex("by_org", (q) => q.eq("orgId", orgId))
         .first();
-    }
-    if (!settings) {
-      settings = await ctx.db.query("settings").first();
+    } else {
+      // Personal workspace only — never borrow another org's settings
+      const all = await ctx.db.query("settings").collect();
+      settings = all.find((s) => !s.orgId);
     }
 
     if (!settings) {
       return {
         hourlyRate: 1200,
-        businessName: "Agro Track Machinery Services",
-        businessAddress: "NH-48, Agro Junction, Hubli, Karnataka - 580020",
-        phoneNumber: "+91 98765 43210",
-        gstNumber: "29AAAAA1111A1Z1",
+        businessName: "My Business",
+        businessAddress: "",
+        phoneNumber: "",
+        gstNumber: "",
         invoicePrefix: "INV-",
         currencySymbol: "₹",
         defaultTax: 0,
-        invoiceNotes: "Thank you for doing business with us! Please pay within 7 days.",
-        footerText: "Powered by Agro Track Systems",
+        invoiceNotes: "",
+        footerText: "",
       };
     }
     return settings;
@@ -62,7 +63,8 @@ export const update = mutation({
         .withIndex("by_org", (q) => q.eq("orgId", orgId))
         .first();
     } else {
-      existing = await ctx.db.query("settings").first();
+      const all = await ctx.db.query("settings").collect();
+      existing = all.find((s) => !s.orgId);
     }
 
     if (existing) {

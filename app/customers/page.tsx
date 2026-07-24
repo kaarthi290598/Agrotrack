@@ -14,10 +14,12 @@ import { Textarea } from "../../components/ui/Textarea";
 import { Dialog } from "../../components/ui/Dialog";
 import { Card, CardContent } from "../../components/ui/Card";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "../../components/ui/Table";
-import { Plus, Search, Edit2, Trash2, History, UserPlus, Phone, MapPin, Eye, Calendar, DollarSign, Clock, Users, Navigation, Loader2 } from "lucide-react";
+import { CustomersPageSkeleton } from "../../components/skeletons/PageSkeletons";
+import { Plus, Search, Edit2, Trash2, History, UserPlus, Phone, MapPin, Eye, Calendar, DollarSign, Clock, Users, Navigation } from "lucide-react";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { isBillCreatedByUser } from "../../lib/utils";
+import { FILTER_SEARCH_CLASS, TABLE } from "../../lib/ui-classes";
 
 // Validation schema for add/edit customer
 const customerSchema = z.object({
@@ -35,7 +37,7 @@ const customerSchema = z.object({
 type CustomerFormValues = z.infer<typeof customerSchema>;
 
 export default function CustomersPage() {
-  const { orgId } = useClerkAuth();
+  const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -129,8 +131,9 @@ export default function CustomersPage() {
   };
 
   useEffect(() => {
+    if (!isClerkLoaded) return;
     loadData();
-  }, [orgId]);
+  }, [orgId, isClerkLoaded]);
 
   // Search logic
   useEffect(() => {
@@ -260,11 +263,15 @@ export default function CustomersPage() {
   const totalHours = customerBills.reduce((sum, b) => sum + b.hoursUsed, 0);
   const avgHours = customerBills.length > 0 ? Number((totalHours / customerBills.length).toFixed(2)) : 0;
 
+  if (!isClerkLoaded || (isLoading && customers.length === 0)) {
+    return <CustomersPageSkeleton />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header section */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Customer Database</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             View profiles, billing histories, contact information, and villages.
@@ -275,7 +282,7 @@ export default function CustomersPage() {
             reset({ name: "", mobile: "", location: "", state: "", notes: "" });
             setIsAddOpen(true);
           }}
-          className="w-full sm:w-auto cursor-pointer"
+          className="w-full sm:w-auto cursor-pointer shadow-md shadow-emerald-600/20"
         >
           <Plus className="h-4.5 w-4.5" />
           Add Customer
@@ -286,13 +293,13 @@ export default function CustomersPage() {
       <Card>
         <CardContent className="p-4">
           <div className="relative w-full">
-            <Search className="absolute top-3 left-3 h-4.5 w-4.5 text-slate-400 dark:text-slate-500" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input
               type="text"
               placeholder="Search by name, mobile, location, or state..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 transition-all"
+              className={FILTER_SEARCH_CLASS}
             />
           </div>
         </CardContent>
@@ -301,19 +308,13 @@ export default function CustomersPage() {
       {/* Main Customers List */}
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-8 space-y-4">
-              <div className="h-8 animate-pulse rounded bg-slate-100 dark:bg-slate-800 w-full"></div>
-              <div className="h-8 animate-pulse rounded bg-slate-100 dark:bg-slate-800 w-full"></div>
-              <div className="h-8 animate-pulse rounded bg-slate-100 dark:bg-slate-800 w-full"></div>
-            </div>
-          ) : filteredCustomers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-900">
-                <Users className="h-6 w-6" />
+          {filteredCustomers.length === 0 ? (
+            <div className="py-16 text-center text-slate-500 dark:text-slate-400 px-4">
+              <div className="mx-auto mb-3 h-12 w-12 rounded-2xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                <Users className="h-6 w-6 text-slate-400" />
               </div>
-              <h3 className="mt-4 text-sm font-semibold text-slate-900 dark:text-white">No customers found</h3>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              <p className="font-semibold text-sm text-slate-700 dark:text-slate-300">No customers found</p>
+              <p className="text-xs mt-1">
                 {searchQuery ? "Try refining your search keyword." : "Add your first customer to get started."}
               </p>
             </div>
@@ -388,15 +389,15 @@ export default function CustomersPage() {
                   <TableBody>
                     {filteredCustomers.map((cust) => (
                       <TableRow key={cust.id}>
-                        <TableCell className="font-medium text-slate-900 dark:text-white">
+                        <TableCell className={TABLE.name}>
                           {cust.name}
                         </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400 font-mono text-xs">
+                        <TableCell className={TABLE.mono}>
                           {cust.mobile}
                         </TableCell>
                         <TableCell>
                           {cust.location || cust.state ? (
-                            <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                            <span className={`inline-flex items-center gap-1 ${TABLE.secondary}`}>
                               <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
                               {cust.location || ''}{cust.location && cust.state ? ', ' : ''}{cust.state || ''}
                             </span>
@@ -404,7 +405,7 @@ export default function CustomersPage() {
                             <span className="text-slate-400 text-xs italic">Not specified</span>
                           )}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell text-slate-500 text-xs">
+                        <TableCell className={`hidden md:table-cell ${TABLE.muted}`}>
                           {new Date(cust.createdAt).toLocaleDateString("en-IN", {
                             year: "numeric",
                             month: "short",
@@ -605,7 +606,7 @@ export default function CustomersPage() {
             Are you sure you want to delete <span className="font-semibold text-slate-900 dark:text-white">{selectedCustomer?.name}</span>?
           </p>
           <div className="rounded-lg bg-red-50 p-3.5 border border-red-100 dark:bg-red-950/20 dark:border-red-900/30 text-xs text-red-800 dark:text-red-300">
-            <strong>Warning:</strong> This will delete this profile. Bills generated under this customer will remain in billing records but will point to a deleted entity.
+            <strong>Warning:</strong> Existing invoices will keep the customer details saved on each bill. You will no longer be able to create new bills for this customer after deletion.
           </div>
         </div>
       </Dialog>
@@ -662,19 +663,19 @@ export default function CustomersPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="py-2.5">Invoice No</TableHead>
-                      <TableHead className="py-2.5">Date</TableHead>
-                      <TableHead className="py-2.5">Hours</TableHead>
-                      <TableHead className="py-2.5 text-right">Grand Total</TableHead>
+                      <TableHead>Invoice No</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Hours</TableHead>
+                      <TableHead className="text-right">Grand Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {customerBills.map((bill) => (
                       <TableRow key={bill.id}>
-                        <TableCell className="font-semibold text-xs py-2.5">{bill.invoiceNumber}</TableCell>
-                        <TableCell className="text-xs text-slate-500 py-2.5">{bill.date}</TableCell>
-                        <TableCell className="text-xs py-2.5">{bill.hoursUsed} hr</TableCell>
-                        <TableCell className="text-xs font-bold text-right py-2.5">₹{bill.grandTotal}</TableCell>
+                        <TableCell className={TABLE.invoice}>{bill.invoiceNumber}</TableCell>
+                        <TableCell className={TABLE.muted}>{bill.date}</TableCell>
+                        <TableCell className={TABLE.muted}>{bill.hoursUsed} hr</TableCell>
+                        <TableCell className={TABLE.moneyRight}>₹{bill.grandTotal}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -12,7 +12,8 @@ import { Input } from "../../components/ui/Input";
 import { Textarea } from "../../components/ui/Textarea";
 import { useToast } from "../../components/ui/Toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../components/ui/Card";
-import { Settings as SettingsIcon, Save, Loader2, Sun, Moon } from "lucide-react";
+import { SettingsPageSkeleton } from "../../components/skeletons/PageSkeletons";
+import { Settings as SettingsIcon, Save, Sun, Moon } from "lucide-react";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { useAuth } from "../../components/auth/AuthProvider";
 
@@ -33,7 +34,7 @@ type SettingsFormValues = z.infer<typeof settingsSchema>;
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { orgId } = useClerkAuth();
+  const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { toast } = useToast();
@@ -90,6 +91,8 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
+    if (!isClerkLoaded) return;
+
     async function loadSettings() {
       setIsLoading(true);
       try {
@@ -111,7 +114,7 @@ export default function SettingsPage() {
       }
     }
     loadSettings();
-  }, [reset, toast, orgId]);
+  }, [reset, toast, orgId, isClerkLoaded]);
 
   const onSubmit = async (values: SettingsFormValues) => {
     setIsSaving(true);
@@ -134,29 +137,7 @@ export default function SettingsPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2">
-          <div className="h-8 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-          <div className="h-4 w-72 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-        </div>
-        <Card>
-          <CardHeader>
-            <div className="h-6 w-36 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-            <div className="h-4 w-60 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="h-10 animate-pulse rounded bg-slate-100 dark:bg-slate-800"></div>
-              <div className="h-10 animate-pulse rounded bg-slate-100 dark:bg-slate-800"></div>
-              <div className="h-10 animate-pulse rounded bg-slate-100 dark:bg-slate-800"></div>
-              <div className="h-10 animate-pulse rounded bg-slate-100 dark:bg-slate-800"></div>
-            </div>
-            <div className="h-20 animate-pulse rounded bg-slate-100 dark:bg-slate-800"></div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <SettingsPageSkeleton />;
   }
 
   return (

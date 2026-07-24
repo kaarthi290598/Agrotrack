@@ -2,15 +2,15 @@ import { Customer, Bill, Settings } from "../types";
 
 export const defaultSettings: Settings = {
   hourlyRate: 1200,
-  businessName: "Agro Track Machinery Services",
-  businessAddress: "NH-48, Agro Junction, Hubli, Karnataka - 580020",
-  phoneNumber: "+91 98765 43210",
-  gstNumber: "29AAAAA1111A1Z1",
+  businessName: "My Business",
+  businessAddress: "",
+  phoneNumber: "",
+  gstNumber: "",
   invoicePrefix: "INV-",
   currencySymbol: "₹",
   defaultTax: 0,
-  invoiceNotes: "Thank you for doing business with us! Please pay within 7 days.",
-  footerText: "Powered by Agro Track Systems"
+  invoiceNotes: "",
+  footerText: ""
 };
 
 export const mockCustomers: Customer[] = [

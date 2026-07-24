@@ -4,6 +4,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
 import { customerService } from "./customer.service";
 import { isBillCreatedByUser } from "../lib/utils";
+import { resolveBillCustomer } from "../lib/bill-customer";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "https://different-puffin-360.convex.cloud";
 const convex = new ConvexHttpClient(convexUrl);
@@ -16,6 +17,10 @@ export const billingService = {
         id: b._id,
         invoiceNumber: b.invoiceNumber,
         customerId: b.customerId,
+        customerName: b.customerName,
+        customerMobile: b.customerMobile,
+        customerLocation: b.customerLocation,
+        customerState: b.customerState,
         date: b.date,
         startTime: b.startTime,
         endTime: b.endTime,
@@ -32,9 +37,8 @@ export const billingService = {
         createdByEmail: b.createdByEmail,
         createdAt: b.createdAt,
       }));
-      if (mapped && mapped.length > 0) {
-        saveDBBills(mapped);
-      }
+      // Always sync local cache so stale mock data cannot linger
+      saveDBBills(mapped);
       return mapped;
     } catch (e) {
       console.warn("Falling back to local DB for bills:", e);
@@ -230,12 +234,23 @@ export const billingService = {
     }
   },
 
+  backfillCustomerSnapshots: async (): Promise<{ updated: number; total: number }> => {
+    try {
+      return await convex.mutation(api.bills.backfillCustomerSnapshots, {});
+    } catch (e) {
+      console.warn("Convex backfill customer snapshots fallback:", e);
+      return { updated: 0, total: 0 };
+    }
+  },
+
   getStats: async (
     orgId?: string, 
     user?: UserProfile | null, 
     isAdmin: boolean = true
   ): Promise<DashboardStats & { 
     monthlyStats: { date: string; amount: number }[];
+    monthlyRevenue: { year: number; month: number; amount: number }[];
+    availableYears: number[];
     locationStats: { location: string; amount: number }[];
   }> => {
     const rawBills = await billingService.getAll(orgId);
@@ -266,10 +281,32 @@ export const billingService = {
     // Recent 5 bills with Customer Name
     const recentBills = bills.slice(0, 5).map((b) => ({
       ...b,
-      customerName: customerMap.get(b.customerId)?.name || "Unknown Customer"
+      ...resolveBillCustomer(b, customerMap),
     }));
 
-    // Revenue in the last 7 days for chart
+    // Monthly revenue grouped by year-month (uses bill date)
+    const monthlyRevenueMap = new Map<string, number>();
+    bills.forEach((b) => {
+      if (!b.date) return;
+      const parts = b.date.split("-");
+      if (parts.length < 2) return;
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      if (isNaN(year) || isNaN(month)) return;
+      const key = `${year}-${month}`;
+      monthlyRevenueMap.set(key, (monthlyRevenueMap.get(key) || 0) + b.grandTotal);
+    });
+
+    const monthlyRevenue = Array.from(monthlyRevenueMap.entries()).map(([key, amount]) => {
+      const [year, month] = key.split("-").map(Number);
+      return { year, month, amount };
+    });
+
+    const yearSet = new Set(monthlyRevenue.map((r) => r.year));
+    yearSet.add(new Date().getFullYear());
+    const availableYears = Array.from(yearSet).sort((a, b) => b - a);
+
+    // Revenue in the last 7 days for chart (legacy — kept for compatibility)
     const last7DaysMap = new Map<string, number>();
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
@@ -295,8 +332,8 @@ export const billingService = {
     // Location wise statistics
     const locationRevenueMap = new Map<string, number>();
     bills.forEach((b) => {
-      const customer = customerMap.get(b.customerId);
-      const location = customer?.location || "Other/Direct";
+      const resolved = resolveBillCustomer(b, customerMap);
+      const location = resolved.customerLocation || "Other/Direct";
       locationRevenueMap.set(location, (locationRevenueMap.get(location) || 0) + b.grandTotal);
     });
 
@@ -313,6 +350,8 @@ export const billingService = {
       averageBilling,
       recentBills,
       monthlyStats,
+      monthlyRevenue,
+      availableYears,
       locationStats
     };
   }

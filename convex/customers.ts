@@ -14,7 +14,8 @@ export const getAll = query({
     if (orgId) {
       return all.filter((c) => c.orgId === orgId);
     }
-    return all;
+    // No org selected — only personal/unscoped records, never all orgs' data
+    return all.filter((c) => !c.orgId);
   },
 });
 

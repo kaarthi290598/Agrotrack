@@ -19,10 +19,8 @@ export const customerService = {
         notes: c.notes,
         createdAt: c.createdAt,
       }));
-      // Keep local DB synced with Convex query results
-      if (mapped && mapped.length > 0) {
-        saveDBCustomers(mapped);
-      }
+      // Always sync local cache so stale mock data cannot linger
+      saveDBCustomers(mapped);
       return mapped;
     } catch (e) {
       console.warn("Falling back to local DB for customers:", e);

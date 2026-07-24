@@ -14,7 +14,8 @@ export const getAll = query({
     if (orgId) {
       return all.filter((b) => b.orgId === orgId);
     }
-    return all;
+    // No org selected — only personal/unscoped records, never all orgs' data
+    return all.filter((b) => !b.orgId);
   },
 });
 
@@ -22,6 +23,10 @@ export const create = mutation({
   args: {
     orgId: v.optional(v.string()),
     customerId: v.string(),
+    customerName: v.optional(v.string()),
+    customerMobile: v.optional(v.string()),
+    customerLocation: v.optional(v.string()),
+    customerState: v.optional(v.string()),
     date: v.string(),
     startTime: v.optional(v.string()),
     endTime: v.optional(v.string()),
@@ -90,6 +95,10 @@ export const update = mutation({
   args: {
     id: v.id("bills"),
     customerId: v.optional(v.string()),
+    customerName: v.optional(v.string()),
+    customerMobile: v.optional(v.string()),
+    customerLocation: v.optional(v.string()),
+    customerState: v.optional(v.string()),
     date: v.optional(v.string()),
     startTime: v.optional(v.string()),
     endTime: v.optional(v.string()),
@@ -168,5 +177,32 @@ export const remove = mutation({
   args: { id: v.id("bills") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.id);
+  },
+});
+
+export const backfillCustomerSnapshots = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const bills = await ctx.db.query("bills").collect();
+    const customers = await ctx.db.query("customers").collect();
+    const customerMap = new Map(customers.map((c) => [c._id, c]));
+
+    let updated = 0;
+    for (const bill of bills) {
+      if (bill.customerName) continue;
+
+      const customer = customerMap.get(bill.customerId as any);
+      if (!customer) continue;
+
+      await ctx.db.patch(bill._id, {
+        customerName: customer.name,
+        customerMobile: customer.mobile,
+        customerLocation: customer.location,
+        customerState: customer.state,
+      });
+      updated++;
+    }
+
+    return { updated, total: bills.length };
   },
 });

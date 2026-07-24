@@ -22,6 +22,7 @@ export const settingsService = {
         invoiceNotes: data.invoiceNotes,
         footerText: data.footerText,
       };
+      saveDBSettings(settings);
       return settings;
     } catch (e) {
       console.warn("Falling back to local DB for settings:", e);

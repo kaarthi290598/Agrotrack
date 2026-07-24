@@ -22,6 +22,8 @@ import {
   TableRow,
   TableCell,
 } from "../components/ui/Table";
+import { DashboardSkeleton } from "../components/skeletons/PageSkeletons";
+import { TABLE } from "../lib/ui-classes";
 import {
   Users,
   Receipt,
@@ -37,6 +39,8 @@ import { customerService } from "../services/customer.service";
 import { Show, useAuth as useClerkAuth, useOrganization } from "@clerk/nextjs";
 import { useAuth } from "../components/auth/AuthProvider";
 import { LandingPage } from "../components/landing/LandingPage";
+import { MonthlyRevenueChart } from "../components/dashboard/MonthlyRevenueChart";
+import { StatCard } from "../components/ui/StatCard";
 
 interface DashboardData {
   totalCustomers: number;
@@ -45,12 +49,13 @@ interface DashboardData {
   todayRevenue: number;
   averageBilling: number;
   recentBills: (Bill & { customerName?: string })[];
-  monthlyStats: { date: string; amount: number }[];
+  monthlyRevenue: { year: number; month: number; amount: number }[];
+  availableYears: number[];
   locationStats: { location: string; amount: number }[];
 }
 
 export default function DashboardPage() {
-  const { orgId, orgRole } = useClerkAuth();
+  const { orgId, orgRole, isLoaded: isClerkLoaded } = useClerkAuth();
   const { organization } = useOrganization();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -62,6 +67,9 @@ export default function DashboardPage() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Wait for Clerk so we don't fetch unscoped/all-org data before orgId is ready
+    if (!isClerkLoaded) return;
+
     async function loadDashboardData() {
       setIsLoading(true);
       try {
@@ -87,75 +95,18 @@ export default function DashboardPage() {
       }
     }
     loadDashboardData();
-  }, [orgId, toast, user, isAdmin]);
+  }, [orgId, isClerkLoaded, toast, user, isAdmin]);
 
   if (isLoading || !data || !settings) {
-    return (
-      <div className="space-y-8">
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <div className="h-8 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-            <div className="h-4 w-64 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-          </div>
-          <div className="h-10 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {[...Array(5)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-6 space-y-2">
-                <div className="h-4 w-20 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-                <div className="h-8 w-16 animate-pulse rounded bg-slate-200 dark:bg-slate-800"></div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="h-80 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800 lg:col-span-2"></div>
-          <div className="h-80 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800"></div>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const currency = settings.currencySymbol || "₹";
 
-  const padding = 40;
-  const chartHeight = 180;
-  const chartWidth = 550;
-  const maxVal = Math.max(...data.monthlyStats.map((s) => s.amount), 1000);
-
-  const points = data.monthlyStats.map((stat, i) => {
-    const x =
-      padding +
-      (i * (chartWidth - padding * 2)) /
-        Math.max(data.monthlyStats.length - 1, 1);
-    const y =
-      chartHeight -
-      padding -
-      (stat.amount / maxVal) * (chartHeight - padding * 2);
-    return { x, y, label: stat.date, val: stat.amount };
-  });
-
-  const pathD =
-    points.length > 0
-      ? `M ${points[0].x} ${points[0].y} ` +
-        points
-          .slice(1)
-          .map((p) => `L ${p.x} ${p.y}`)
-          .join(" ")
-      : "";
-
-  const areaD =
-    points.length > 0
-      ? `${pathD} L ${points[points.length - 1].x} ${chartHeight - padding} L ${points[0].x} ${chartHeight - padding} Z`
-      : "";
-
   return (
     <div className="space-y-8">
       {/* Active Clerk Organization ID Status Card */}
-      <div className="rounded-2xl bg-gradient-to-r from-emerald-900/90 via-teal-900 to-slate-900 p-5 text-white shadow-lg border border-emerald-500/20 space-y-3">
+      <div className="rounded-2xl bg-linear-to-r from-emerald-900/90 via-teal-900 to-slate-900 p-5 text-white shadow-lg border border-emerald-500/20 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 font-bold">
@@ -195,7 +146,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <Link href="/billing" passHref className="w-full sm:w-auto">
-          <Button variant="primary" className="w-full sm:w-auto cursor-pointer">
+          <Button variant="primary" className="w-full sm:w-auto cursor-pointer shadow-md shadow-emerald-600/20">
             <Plus className="h-4.5 w-4.5" />
             Generate New Bill
           </Button>
@@ -203,195 +154,21 @@ export default function DashboardPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        {/* Total Customers */}
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Total Farmers
-              </span>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {data.totalCustomers}
-              </p>
-            </div>
-            <div className="h-10 w-10 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <Users className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Bills Generated */}
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Bills Created
-              </span>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {data.totalBills}
-              </p>
-            </div>
-            <div className="h-10 w-10 rounded-lg bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <Receipt className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Total Revenue */}
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Total Revenue
-              </span>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {currency}
-                {data.totalRevenue.toLocaleString()}
-              </p>
-            </div>
-            <div className="h-10 w-10 rounded-lg bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <IndianRupee className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Today's Revenue */}
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Today's Revenue
-              </span>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {currency}
-                {data.todayRevenue.toLocaleString()}
-              </p>
-            </div>
-            <div className="h-10 w-10 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Average Billing */}
-        <Card className="hover:shadow-md transition-shadow">
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Avg Bill Value
-              </span>
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {currency}
-                {Math.round(data.averageBilling).toLocaleString()}
-              </p>
-            </div>
-            <div className="h-10 w-10 rounded-lg bg-pink-50 dark:bg-pink-950/30 flex items-center justify-center text-pink-600 dark:text-pink-400">
-              <Calculator className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard label="Total Farmers" value={data.totalCustomers} icon={<Users className="h-3.5 w-3.5" />} color="emerald" mono={false} />
+        <StatCard label="Bills Created" value={data.totalBills} icon={<Receipt className="h-3.5 w-3.5" />} color="blue" mono={false} />
+        <StatCard label="Total Revenue" value={`${currency}${data.totalRevenue.toLocaleString()}`} icon={<IndianRupee className="h-3.5 w-3.5" />} color="amber" />
+        <StatCard label="Today's Revenue" value={`${currency}${data.todayRevenue.toLocaleString()}`} icon={<TrendingUp className="h-3.5 w-3.5" />} color="indigo" />
+        <StatCard label="Avg Bill Value" value={`${currency}${Math.round(data.averageBilling).toLocaleString()}`} icon={<Calculator className="h-3.5 w-3.5" />} color="pink" />
       </div>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* SVG Revenue Line Area Chart */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">
-              Revenue Trend (Last 7 Days)
-            </CardTitle>
-            <CardDescription>
-              Daily billing revenue fluctuations in {currency}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4 flex justify-center">
-            <div className="w-full overflow-hidden">
-              <svg
-                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                className="w-full h-48 select-none"
-              >
-                <defs>
-                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-
-                {/* Horizontal grid lines */}
-                {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
-                  const y = padding + ratio * (chartHeight - padding * 2);
-                  const amount = Math.round(maxVal * (1 - ratio));
-                  return (
-                    <g key={idx}>
-                      <line
-                        x1={padding}
-                        y1={y}
-                        x2={chartWidth - padding}
-                        y2={y}
-                        className="stroke-slate-100 dark:stroke-slate-800"
-                        strokeWidth="1"
-                        strokeDasharray="4 4"
-                      />
-                      <text
-                        x={padding - 8}
-                        y={y + 3}
-                        className="fill-slate-400 dark:fill-slate-500 font-mono text-[9px]"
-                        textAnchor="end"
-                      >
-                        {amount}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Fill Area */}
-                {areaD && <path d={areaD} fill="url(#chartGrad)" />}
-
-                {/* Stroke Path */}
-                {pathD && (
-                  <path
-                    d={pathD}
-                    fill="none"
-                    className="stroke-emerald-500 dark:stroke-emerald-400"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                )}
-
-                {/* Data Points / Circles */}
-                {points.map((p, idx) => (
-                  <g key={idx} className="group cursor-pointer">
-                    <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r="4"
-                      className="fill-white dark:fill-slate-900 stroke-emerald-500 dark:stroke-emerald-400"
-                      strokeWidth="2"
-                    />
-                    <text
-                      x={p.x}
-                      y={p.y - 8}
-                      className="fill-slate-700 dark:fill-slate-300 font-mono font-bold text-[8px] text-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      textAnchor="middle"
-                    >
-                      {currency}
-                      {p.val}
-                    </text>
-                    <text
-                      x={p.x}
-                      y={chartHeight - 12}
-                      className="fill-slate-400 dark:fill-slate-500 font-medium text-[8.5px]"
-                      textAnchor="middle"
-                    >
-                      {p.label}
-                    </text>
-                  </g>
-                ))}
-              </svg>
-            </div>
-          </CardContent>
-        </Card>
+        <MonthlyRevenueChart
+          data={data.monthlyRevenue}
+          availableYears={data.availableYears}
+          currency={currency}
+        />
 
         {/* Top Locations Progress Bars */}
         <Card>
@@ -405,7 +182,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="pt-4 space-y-4.5">
             {data.locationStats.length === 0 ? (
-              <p className="text-xs text-slate-455 text-center py-8">
+              <p className="text-xs text-slate-500 text-center py-8">
                 No location revenue data available.
               </p>
             ) : (
@@ -428,7 +205,7 @@ export default function DashboardPage() {
                       <span className="font-semibold text-slate-800 dark:text-slate-200">
                         {lStat.location}
                       </span>
-                      <span className="font-mono text-slate-550 dark:text-slate-400 font-bold">
+                      <span className="font-mono text-slate-500 dark:text-slate-400 font-bold">
                         {currency}
                         {lStat.amount.toLocaleString()}
                       </span>
@@ -461,7 +238,7 @@ export default function DashboardPage() {
               </CardDescription>
             </div>
             <Link
-              href="/reports"
+              href="/bills"
               className="text-xs font-semibold text-emerald-600 hover:text-emerald-500 flex items-center gap-0.5"
             >
               View All Bills <ArrowUpRight className="h-3.5 w-3.5" />
@@ -532,18 +309,16 @@ export default function DashboardPage() {
                     <TableBody>
                       {data.recentBills.map((bill) => (
                         <TableRow key={bill.id}>
-                          <TableCell className="font-bold text-xs">
+                          <TableCell className={TABLE.invoice}>
                             {bill.invoiceNumber}
                           </TableCell>
-                          <TableCell className="font-medium text-slate-850 dark:text-slate-200">
+                          <TableCell className={TABLE.name}>
                             {bill.customerName}
                           </TableCell>
-                          <TableCell>
-                            <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60">
-                              {bill.createdBy || "Operator"}
-                            </span>
+                          <TableCell className={TABLE.name}>
+                            {bill.createdBy || "Unknown"}
                           </TableCell>
-                          <TableCell className="text-slate-500 text-xs">
+                          <TableCell className={TABLE.muted}>
                             {bill.hoursUsed} hr
                           </TableCell>
                           <TableCell>
@@ -563,7 +338,7 @@ export default function DashboardPage() {
                                   : "Not Paid"}
                             </span>
                           </TableCell>
-                          <TableCell className="font-bold text-right text-emerald-700 dark:text-emerald-400">
+                          <TableCell className={TABLE.moneyRight}>
                             {currency}
                             {bill.grandTotal}
                           </TableCell>
@@ -605,7 +380,7 @@ export default function DashboardPage() {
                         <User className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-850 dark:text-slate-200 truncate leading-none">
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate leading-none">
                           {cust.name}
                         </p>
                         <span className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-0.5 mt-0.5">

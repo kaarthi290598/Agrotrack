@@ -10,6 +10,7 @@ import { customerService } from "../../services/customer.service";
 import { billingService } from "../../services/billing.service";
 import { settingsService } from "../../services/settings.service";
 import { Customer, Bill, AdditionalCharge, Settings } from "../../types";
+import { customerSnapshotFromCustomer, resolveBillCustomer } from "../../lib/bill-customer";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -21,6 +22,9 @@ import { DatePicker } from "../../components/ui/DatePicker";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { isBillCreatedByUser } from "../../lib/utils";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
+import { BillingPageSkeleton } from "../../components/skeletons/PageSkeletons";
+import { downloadInvoicePdf } from "../../lib/invoice-pdf";
+import { PdfPaymentBadge } from "../../components/bills/PdfPaymentBadge";
 import { 
   Plus, 
   Search, 
@@ -32,7 +36,6 @@ import {
   Sparkles,
   Printer, 
   User,
-  Loader2,
   CheckCircle2,
   XCircle,
   Edit3,
@@ -63,7 +66,7 @@ const quickCustomerSchema = z.object({
 type QuickCustomerForm = z.infer<typeof quickCustomerSchema>;
 
 function BillingFormInner() {
-  const { orgId } = useClerkAuth();
+  const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
@@ -108,6 +111,7 @@ function BillingFormInner() {
   
   // Generated invoice preview modal
   const [generatedInvoice, setGeneratedInvoice] = useState<(Bill & { customerName?: string; customerMobile?: string; customerLocation?: string; customerState?: string }) | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Quick Add Customer Form
   const {
@@ -131,6 +135,8 @@ function BillingFormInner() {
 
   // Initial Data Loader
   useEffect(() => {
+    if (!isClerkLoaded) return;
+
     async function loadData() {
       try {
         const settingsData = await settingsService.get(orgId || undefined);
@@ -187,7 +193,7 @@ function BillingFormInner() {
       }
     }
     loadData();
-  }, [orgId, searchParams, toast]);
+  }, [orgId, isClerkLoaded, searchParams, toast]);
 
   // GPS Location Trigger for Quick Add Customer
   const handleGetLocation = () => {
@@ -376,8 +382,10 @@ function BillingFormInner() {
     setIsGenerating(true);
     try {
       const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+      const customerSnapshot = customerSnapshotFromCustomer(selectedCustomer);
       await billingService.create({
         customerId: selectedCustomerId,
+        ...customerSnapshot,
         date: billDate || new Date().toISOString().split("T")[0],
         startTime,
         endTime: undefined,
@@ -465,11 +473,13 @@ function BillingFormInner() {
     try {
       const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
       const initialStatus = isAdmin ? "APPROVED" : "PENDING_APPROVAL";
+      const customerSnapshot = customerSnapshotFromCustomer(selectedCustomer);
       
       if (editingBillId) {
         // Update existing bill mode
         const updatedBill = await billingService.update(editingBillId, {
           customerId: selectedCustomerId,
+          ...customerSnapshot,
           date: billDate || new Date().toISOString().split("T")[0],
           startTime: startTime || undefined,
           endTime: endTime || undefined,
@@ -487,10 +497,7 @@ function BillingFormInner() {
         if (paymentStatus === "PAID") {
           setGeneratedInvoice({
             ...updatedBill,
-            customerName: selectedCustomer?.name,
-            customerMobile: selectedCustomer?.mobile,
-            customerLocation: selectedCustomer?.location,
-            customerState: selectedCustomer?.state
+            ...resolveBillCustomer(updatedBill, new Map(customers.map((c) => [c.id, c]))),
           });
         }
 
@@ -512,6 +519,7 @@ function BillingFormInner() {
       // New bill creation mode
       const newBill = await billingService.create({
         customerId: selectedCustomerId,
+        ...customerSnapshot,
         date: billDate || new Date().toISOString().split("T")[0],
         startTime: startTime || undefined,
         endTime: endTime || undefined,
@@ -531,10 +539,7 @@ function BillingFormInner() {
       if (paymentStatus === "PAID") {
         setGeneratedInvoice({
           ...newBill,
-          customerName: selectedCustomer?.name,
-          customerMobile: selectedCustomer?.mobile,
-          customerLocation: selectedCustomer?.location,
-          customerState: selectedCustomer?.state
+          ...resolveBillCustomer(newBill, new Map(customers.map((c) => [c.id, c]))),
         });
       }
       
@@ -572,16 +577,29 @@ function BillingFormInner() {
     setEditingInvoiceNum("");
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!generatedInvoice) return;
+    setIsExportingPdf(true);
+    try {
+      await downloadInvoicePdf(generatedInvoice.invoiceNumber);
+      toast({
+        type: "success",
+        title: "PDF Downloaded",
+        description: `${generatedInvoice.invoiceNumber}.pdf saved successfully.`,
+      });
+    } catch (err) {
+      toast({
+        type: "error",
+        title: "PDF Export Failed",
+        description: err instanceof Error ? err.message : "Could not generate the invoice PDF. Please try again.",
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   if (!isLoaded || !settings) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-      </div>
-    );
+    return <BillingPageSkeleton />;
   }
 
   // Scoped bills for member vs admin
@@ -606,6 +624,7 @@ function BillingFormInner() {
               </span>
               <p className="font-mono font-bold text-sm text-slate-900 mt-2">{generatedInvoice.invoiceNumber}</p>
               <p className="text-[10px] text-slate-500">{generatedInvoice.date}</p>
+              <PdfPaymentBadge status={generatedInvoice.paymentStatus} />
             </div>
           </div>
 
@@ -652,8 +671,8 @@ function BillingFormInner() {
           </table>
 
           <div className="flex justify-between items-start mt-6 border-t pt-4">
-            <div className="text-[10px] text-slate-500">
-              <p>Payment Status: <strong>{generatedInvoice.paymentStatus}</strong></p>
+            <div className="text-[10px] text-slate-500 space-y-1">
+              <PdfPaymentBadge status={generatedInvoice.paymentStatus} />
               <p>Issued By: {generatedInvoice.createdBy}</p>
             </div>
             <div className="text-right space-y-1">
@@ -932,7 +951,7 @@ function BillingFormInner() {
                         {additionalCharges.map((chg) => (
                           <TableRow key={chg.id}>
                             <TableCell className="font-semibold text-xs text-slate-800 dark:text-slate-200">{chg.name}</TableCell>
-                            <TableCell className="text-right font-mono text-xs font-bold text-emerald-600">+{currencySymbol}{chg.amount}</TableCell>
+                            <TableCell className="font-mono font-bold text-xs text-right text-emerald-600 dark:text-emerald-400">+{currencySymbol}{chg.amount}</TableCell>
                             <TableCell className="text-center">
                               <button
                                 type="button"
@@ -1340,9 +1359,9 @@ function BillingFormInner() {
         footer={
           <>
             <Button variant="outline" onClick={() => setGeneratedInvoice(null)} className="cursor-pointer">Close Console</Button>
-            <Button variant="success" onClick={handlePrint} className="cursor-pointer">
+            <Button variant="success" onClick={handlePrint} isLoading={isExportingPdf} disabled={isExportingPdf} className="cursor-pointer">
               <Printer className="h-4 w-4" />
-              Print / Save PDF (A4)
+              Download PDF (A4)
             </Button>
           </>
         }
@@ -1350,7 +1369,7 @@ function BillingFormInner() {
         {generatedInvoice && (
           <div className="space-y-4">
             <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-300">
-              Invoice <strong>{generatedInvoice.invoiceNumber}</strong> saved to system records! Click <strong>Print / Save PDF</strong> to output a printable layout.
+              Invoice <strong>{generatedInvoice.invoiceNumber}</strong> saved to system records! Click <strong>Download PDF</strong> to save a clean invoice file.
             </div>
 
             <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono text-[11px] space-y-3 shadow-inner max-h-[50vh] overflow-y-auto">
@@ -1392,11 +1411,7 @@ function BillingFormInner() {
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={
-      <div className="flex h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-      </div>
-    }>
+    <Suspense fallback={<BillingPageSkeleton />}>
       <BillingFormInner />
     </Suspense>
   );

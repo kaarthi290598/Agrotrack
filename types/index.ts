@@ -30,6 +30,10 @@ export interface Bill {
   id: string;
   invoiceNumber: string;
   customerId: string;
+  customerName?: string;
+  customerMobile?: string;
+  customerLocation?: string;
+  customerState?: string;
   date: string; // ISO string or YYYY-MM-DD
   startTime?: string;
   endTime?: string;

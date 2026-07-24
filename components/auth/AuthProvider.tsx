@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useUser, useAuth as useClerkAuth } from "@clerk/nextjs";
 import { UserProfile, UserRole } from "../../types";
+import { getClerkDisplayName } from "../../lib/clerk-user";
 
 interface AuthContextType {
   isSignedIn: boolean;
@@ -44,7 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const user: UserProfile | null = clerkSignedIn && clerkUser ? {
     id: clerkUser.id,
-    fullName: clerkUser.fullName || clerkUser.firstName || "Operator",
+    fullName: getClerkDisplayName(clerkUser),
     primaryEmailAddress: clerkUser.primaryEmailAddress?.emailAddress || "",
     role: effectiveRole
   } : null;
