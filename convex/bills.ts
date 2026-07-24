@@ -42,7 +42,13 @@ export const create = mutation({
       v.literal("REJECTED"),
       v.literal("IN_PROGRESS")
     ),
-    paymentStatus: v.union(v.literal("PAID"), v.literal("UNPAID")),
+    paymentStatus: v.union(
+      v.literal("PAID"),
+      v.literal("UNPAID"),
+      v.literal("PARTIAL_PAID")
+    ),
+    amountPaid: v.optional(v.number()),
+    balanceAmount: v.optional(v.number()),
     createdBy: v.optional(v.string()),
     createdByEmail: v.optional(v.string()),
   },
@@ -84,6 +90,7 @@ export const update = mutation({
   args: {
     id: v.id("bills"),
     customerId: v.optional(v.string()),
+    date: v.optional(v.string()),
     startTime: v.optional(v.string()),
     endTime: v.optional(v.string()),
     hoursUsed: v.optional(v.number()),
@@ -107,7 +114,15 @@ export const update = mutation({
         v.literal("IN_PROGRESS")
       )
     ),
-    paymentStatus: v.optional(v.union(v.literal("PAID"), v.literal("UNPAID"))),
+    paymentStatus: v.optional(
+      v.union(
+        v.literal("PAID"),
+        v.literal("UNPAID"),
+        v.literal("PARTIAL_PAID")
+      )
+    ),
+    amountPaid: v.optional(v.number()),
+    balanceAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
@@ -118,10 +133,20 @@ export const update = mutation({
 export const updatePaymentStatus = mutation({
   args: {
     id: v.id("bills"),
-    paymentStatus: v.union(v.literal("PAID"), v.literal("UNPAID")),
+    paymentStatus: v.union(
+      v.literal("PAID"),
+      v.literal("UNPAID"),
+      v.literal("PARTIAL_PAID")
+    ),
+    amountPaid: v.optional(v.number()),
+    balanceAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { paymentStatus: args.paymentStatus });
+    await ctx.db.patch(args.id, {
+      paymentStatus: args.paymentStatus,
+      amountPaid: args.amountPaid,
+      balanceAmount: args.balanceAmount,
+    });
   },
 });
 

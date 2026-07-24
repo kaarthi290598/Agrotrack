@@ -26,10 +26,15 @@ export const billingService = {
         grandTotal: b.grandTotal,
         status: b.status,
         paymentStatus: b.paymentStatus,
+        amountPaid: b.amountPaid,
+        balanceAmount: b.balanceAmount,
         createdBy: b.createdBy,
         createdByEmail: b.createdByEmail,
         createdAt: b.createdAt,
       }));
+      if (mapped && mapped.length > 0) {
+        saveDBBills(mapped);
+      }
       return mapped;
     } catch (e) {
       console.warn("Falling back to local DB for bills:", e);
@@ -43,7 +48,7 @@ export const billingService = {
         ...billData,
         orgId,
         status: billData.status || "PENDING_APPROVAL",
-        paymentStatus: billData.paymentStatus || "UNPAID",
+        paymentStatus: (billData.paymentStatus as any) || "UNPAID",
       });
       const newBill: Bill = {
         ...billData,
@@ -90,7 +95,7 @@ export const billingService = {
       if (id.length > 15) {
         await convex.mutation(api.bills.update, {
           id: id as any,
-          ...updatedFields,
+          ...(updatedFields as any),
         });
         return { id, ...updatedFields } as Bill;
       }
@@ -112,14 +117,25 @@ export const billingService = {
     return updatedBill;
   },
 
-  updatePaymentStatus: async (id: string, paymentStatus: "PAID" | "UNPAID"): Promise<Bill> => {
+  updatePaymentStatus: async (
+    id: string, 
+    paymentStatus: "PAID" | "UNPAID" | "PARTIAL_PAID",
+    amountPaid?: number
+  ): Promise<Bill> => {
     try {
       if (id.length > 15) {
+        const localBills = getDBBills();
+        const target = localBills.find((b) => b.id === id);
+        const total = target?.grandTotal || 0;
+        const paid = paymentStatus === "PARTIAL_PAID" ? (amountPaid || 0) : paymentStatus === "PAID" ? total : 0;
+        const balance = Math.max(0, total - paid);
+
         await convex.mutation(api.bills.updatePaymentStatus, {
           id: id as any,
-          paymentStatus,
+          paymentStatus: paymentStatus as any,
+          amountPaid: paid,
+          balanceAmount: balance,
         });
-        return { id, paymentStatus } as Bill;
       }
     } catch (e) {
       console.warn("Convex payment status update fallback:", e);
@@ -127,9 +143,25 @@ export const billingService = {
     const bills = getDBBills();
     const index = bills.findIndex((b) => b.id === id);
     if (index === -1) return { id, paymentStatus } as Bill;
-    bills[index].paymentStatus = paymentStatus;
+    
+    const targetBill = bills[index];
+    targetBill.paymentStatus = paymentStatus;
+    
+    if (paymentStatus === "PARTIAL_PAID") {
+      const paid = Math.min(targetBill.grandTotal, Math.max(0, amountPaid || 0));
+      targetBill.amountPaid = paid;
+      targetBill.balanceAmount = Math.max(0, targetBill.grandTotal - paid);
+    } else if (paymentStatus === "PAID") {
+      targetBill.amountPaid = targetBill.grandTotal;
+      targetBill.balanceAmount = 0;
+    } else {
+      targetBill.amountPaid = 0;
+      targetBill.balanceAmount = targetBill.grandTotal;
+    }
+
+    bills[index] = targetBill;
     saveDBBills(bills);
-    return bills[index];
+    return targetBill;
   },
 
   approve: async (id: string): Promise<Bill> => {
@@ -180,6 +212,24 @@ export const billingService = {
     saveDBBills(updated);
   },
 
+  bulkApprove: async (ids: string[]): Promise<void> => {
+    for (const id of ids) {
+      await billingService.approve(id);
+    }
+  },
+
+  bulkReject: async (ids: string[]): Promise<void> => {
+    for (const id of ids) {
+      await billingService.reject(id);
+    }
+  },
+
+  bulkDelete: async (ids: string[]): Promise<void> => {
+    for (const id of ids) {
+      await billingService.delete(id);
+    }
+  },
+
   getStats: async (
     orgId?: string, 
     user?: UserProfile | null, 
@@ -191,8 +241,8 @@ export const billingService = {
     const rawBills = await billingService.getAll(orgId);
     const customers = await customerService.getAll(orgId);
 
-    // Scoped bills for member vs admin
-    const bills = rawBills.filter((b) => isBillCreatedByUser(b, user || null, isAdmin));
+    // Scoped bills for member vs admin (Only APPROVED & FULLY PAID bills count towards revenue & reports)
+    const bills = rawBills.filter((b) => isBillCreatedByUser(b, user || null, isAdmin) && b.status === "APPROVED" && b.paymentStatus === "PAID");
 
     const customerMap = new Map(customers.map((c) => [c.id, c]));
 

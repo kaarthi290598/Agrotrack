@@ -4,6 +4,7 @@ export interface Customer {
   mobile: string;
   location?: string;
   state?: string;
+  pincode?: string;
   notes?: string;
   createdAt: number;
 }
@@ -15,7 +16,7 @@ export interface AdditionalCharge {
 }
 
 export type BillStatus = "APPROVED" | "PENDING_APPROVAL" | "REJECTED" | "IN_PROGRESS";
-export type PaymentStatus = "PAID" | "UNPAID";
+export type PaymentStatus = "PAID" | "UNPAID" | "PARTIAL_PAID";
 export type UserRole = "admin" | "user";
 
 export interface UserProfile {
@@ -39,6 +40,8 @@ export interface Bill {
   grandTotal: number;
   status: BillStatus;
   paymentStatus: PaymentStatus;
+  amountPaid?: number;
+  balanceAmount?: number;
   createdBy?: string;
   createdByEmail?: string;
   createdAt: number;

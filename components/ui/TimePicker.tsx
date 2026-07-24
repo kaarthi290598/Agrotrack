@@ -103,7 +103,9 @@ export const TimePicker: React.FC<TimePickerProps> = ({
         >
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="font-semibold">{value ? displayFormatted : "Choose Time"}</span>
+            <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm tracking-wide truncate">
+              {value ? displayFormatted : "Choose Time"}
+            </span>
           </div>
           {value && (
             <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
@@ -119,51 +121,51 @@ export const TimePicker: React.FC<TimePickerProps> = ({
               className="fixed inset-0 z-30"
               onClick={() => setIsOpen(false)}
             />
-            <div className="absolute left-0 right-0 z-40 mt-1 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-800 dark:bg-slate-950 animate-in fade-in duration-150">
+            <div className="absolute left-0 z-40 mt-1 w-[280px] sm:w-[310px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xl dark:border-slate-800 dark:bg-slate-950 animate-in fade-in zoom-in-95 duration-150">
               <div className="space-y-3">
                 {/* AM / PM Toggle */}
-                <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800">
                   <button
                     type="button"
                     onClick={() => handlePeriodSelect("AM")}
                     className={cn(
-                      "py-1 rounded-md text-xs font-bold transition-all cursor-pointer",
+                      "py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
                       parsed.period === "AM"
-                        ? "bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-white"
-                        : "text-slate-500 dark:text-slate-400"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                     )}
                   >
-                    AM (Morning)
+                    AM
                   </button>
                   <button
                     type="button"
                     onClick={() => handlePeriodSelect("PM")}
                     className={cn(
-                      "py-1 rounded-md text-xs font-bold transition-all cursor-pointer",
+                      "py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
                       parsed.period === "PM"
-                        ? "bg-white text-slate-900 shadow-xs dark:bg-slate-900 dark:text-white"
-                        : "text-slate-500 dark:text-slate-400"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                     )}
                   >
-                    PM (Afternoon/Eve)
+                    PM
                   </button>
                 </div>
 
                 {/* Hours Grid */}
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Hour (1-12)
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">
+                    Select Hour (1-12)
                   </span>
-                  <div className="grid grid-cols-6 gap-1">
+                  <div className="grid grid-cols-6 gap-1.5">
                     {HOURS.map((h) => (
                       <button
                         key={h}
                         type="button"
                         onClick={() => handleHourSelect(h)}
                         className={cn(
-                          "py-1.5 text-xs font-bold rounded-md border transition-all cursor-pointer",
+                          "h-8 text-xs font-bold rounded-lg border transition-all cursor-pointer flex items-center justify-center",
                           parsed.hour === h
-                            ? "border-emerald-600 bg-emerald-600 text-white"
+                            ? "border-emerald-600 bg-emerald-600 text-white shadow-xs"
                             : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                         )}
                       >
@@ -176,19 +178,19 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 {/* Minutes Grid & Flexible Input */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                       Minutes
                     </span>
-                    <span className="text-[10px] text-slate-400">Quick or Custom (0-59)</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">00-59</span>
                   </div>
-                  <div className="grid grid-cols-4 gap-1 mb-2">
+                  <div className="grid grid-cols-4 gap-1.5 mb-2">
                     {PRESET_MINUTES.map((m) => (
                       <button
                         key={m}
                         type="button"
                         onClick={() => handleMinuteSelect(m)}
                         className={cn(
-                          "py-1 text-xs font-bold rounded-md border transition-all cursor-pointer",
+                          "py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer flex items-center justify-center",
                           parsed.minute === m
                             ? "border-emerald-600 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
                             : "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
@@ -200,7 +202,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                   </div>
 
                   {/* Flexible Custom Minute Typing */}
-                  <div className="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400 shrink-0">Exact Min:</label>
                     <input
                       type="number"
@@ -215,24 +217,24 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                           handleMinuteSelect(val);
                         }
                       }}
-                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-900 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
                 </div>
 
                 {/* Quick Presets & Close */}
-                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2 text-xs">
+                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5 text-xs">
                   <button
                     type="button"
                     onClick={handleSetNow}
                     className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
                   >
-                    Set Current Time
+                    Current Time
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsOpen(false)}
-                    className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 px-3 py-1 rounded-md font-bold cursor-pointer"
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1 rounded-lg font-bold transition-colors cursor-pointer"
                   >
                     Done
                   </button>

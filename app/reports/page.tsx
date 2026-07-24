@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { billingService } from "../../services/billing.service";
 import { customerService } from "../../services/customer.service";
 import { settingsService } from "../../services/settings.service";
-import { Bill, Customer, Settings } from "../../types";
+import { Bill, Customer, Settings, PaymentStatus } from "../../types";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -62,7 +62,7 @@ export default function ReportsPage() {
   const [billToDelete, setBillToDelete] = useState<string | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
-  const handleTogglePaymentStatus = async (id: string, currentStatus: "PAID" | "UNPAID", e?: React.MouseEvent) => {
+  const handleTogglePaymentStatus = async (id: string, currentStatus: PaymentStatus, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const nextStatus = currentStatus === "PAID" ? "UNPAID" : "PAID";
     try {
@@ -85,7 +85,7 @@ export default function ReportsPage() {
     setIsLoading(true);
     try {
       const rawBills = await billingService.getAll(orgId || undefined);
-      const allBills = rawBills.filter((b) => isBillCreatedByUser(b, user, isAdmin));
+      const allBills = rawBills.filter((b) => isBillCreatedByUser(b, user, isAdmin) && b.status === "APPROVED" && b.paymentStatus === "PAID");
       const allCustomers = await customerService.getAll(orgId || undefined);
       const loadedSettings = await settingsService.get(orgId || undefined);
       setSettings(loadedSettings);
@@ -349,7 +349,7 @@ export default function ReportsPage() {
         <Button
           onClick={handleExportExcel}
           variant="outline"
-          className="sm:w-auto gap-1.5 cursor-pointer"
+          className="w-full sm:w-auto gap-1.5 cursor-pointer"
         >
           <FileSpreadsheet className="h-4.5 w-4.5 text-emerald-600" />
           Export to Excel
@@ -370,7 +370,7 @@ export default function ReportsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Date Range Selection */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Date Range</label>
@@ -482,94 +482,168 @@ export default function ReportsPage() {
               <div className="h-8 animate-pulse rounded bg-slate-100 dark:bg-slate-800 w-full"></div>
             </div>
           ) : filteredBills.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-900">
-                <BarChart3 className="h-6 w-6" />
-              </div>
-              <h3 className="mt-4 text-sm font-semibold text-slate-900 dark:text-white">No invoice logs found</h3>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Try adjustment filters or generate a bill first.
-              </p>
+            <div className="py-12 text-center text-slate-500 dark:text-slate-400">
+              <Clock className="mx-auto h-8 w-8 text-slate-400 mb-2" />
+              <p className="font-semibold text-sm">No report records found for current filters.</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice ID</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Created By</TableHead>
-                  <TableHead>Location & State</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="hidden md:table-cell">Hours Used</TableHead>
-                  <TableHead>Grand Total</TableHead>
-                  <TableHead>Payment Status</TableHead>
-                  <TableHead className="text-center w-24">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <div>
+              {/* Mobile Cards List (No Horizontal Scrolling) */}
+              <div className="grid grid-cols-1 gap-3 md:hidden">
                 {filteredBills.map((bill) => (
-                  <TableRow 
+                  <div
                     key={bill.id}
                     onClick={() => setSelectedBill(bill)}
-                    className="cursor-pointer"
+                    className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 shadow-xs cursor-pointer hover:border-emerald-500 transition-colors"
                   >
-                    <TableCell className="font-bold text-xs">{bill.invoiceNumber}</TableCell>
-                    <TableCell className="font-semibold text-slate-900 dark:text-white">{bill.customerName}</TableCell>
-                    <TableCell>
-                      <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60">
-                        {bill.createdBy || "Operator"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {bill.customerLocation || bill.customerState ? (
-                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-400 text-xs">
-                          {bill.customerLocation || ''}{bill.customerLocation && bill.customerState ? ', ' : ''}{bill.customerState || ''}
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                      <div>
+                        <span className="font-mono font-bold text-xs text-slate-900 dark:text-white block">
+                          {bill.invoiceNumber}
                         </span>
-                      ) : (
-                        <span className="text-slate-450 text-xs italic">Direct</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-600 dark:text-slate-400">{bill.date}</TableCell>
-                    <TableCell className="hidden md:table-cell text-xs">{bill.hoursUsed} hrs</TableCell>
-                    <TableCell className="font-bold text-emerald-600 dark:text-emerald-400">
-                      {currencySymbol}{bill.grandTotal}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[10px] text-slate-500">{bill.date}</span>
+                      </div>
                       <button
                         type="button"
                         onClick={(e) => handleTogglePaymentStatus(bill.id, bill.paymentStatus || "UNPAID", e)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer border ${
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all cursor-pointer ${
                           bill.paymentStatus === "PAID"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
-                            : "bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-100"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800"
+                            : bill.paymentStatus === "PARTIAL_PAID"
+                            ? "bg-orange-50 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border-orange-300 dark:border-orange-800"
+                            : "bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800"
                         }`}
-                        title="Click to toggle Payment Status (Both User & Admin)"
                       >
-                        {bill.paymentStatus === "PAID" ? "Paid" : "Not Paid"}
+                        {bill.paymentStatus === "PAID"
+                          ? "Paid"
+                          : bill.paymentStatus === "PARTIAL_PAID"
+                          ? `Partial (${currencySymbol}${bill.amountPaid || 0})`
+                          : "Not Paid"}
                       </button>
-                    </TableCell>
-                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-1">
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Farmer</span>
+                        <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">{bill.customerName}</p>
+                        <p className="text-[10px] text-slate-500">{bill.customerLocation || "Direct"}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Created By</span>
+                        <p className="font-semibold text-emerald-700 dark:text-emerald-400 truncate">{bill.createdBy || "Operator"}</p>
+                        <p className="text-[10px] text-slate-500">{bill.hoursUsed} hrs used</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+                      <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+                        {currencySymbol}{bill.grandTotal}
+                      </span>
+                      <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => setSelectedBill(bill)}
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          className="p-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-800 cursor-pointer"
                           title="View Invoice Detail"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
                         <button
                           onClick={(e) => handleDeleteClick(bill.id, e)}
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg border border-rose-200 dark:border-rose-900 cursor-pointer"
                           title="Delete Invoice Record"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Invoice No</TableHead>
+                        <TableHead>Farmer</TableHead>
+                        <TableHead>Created By</TableHead>
+                        <TableHead>Location & State</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="hidden md:table-cell">Hours Used</TableHead>
+                        <TableHead>Grand Total</TableHead>
+                        <TableHead>Payment Status</TableHead>
+                        <TableHead className="text-center w-24">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredBills.map((bill) => (
+                        <TableRow 
+                          key={bill.id}
+                          onClick={() => setSelectedBill(bill)}
+                          className="cursor-pointer"
+                        >
+                          <TableCell className="font-bold text-xs">{bill.invoiceNumber}</TableCell>
+                          <TableCell className="font-semibold text-slate-900 dark:text-white">{bill.customerName}</TableCell>
+                          <TableCell>
+                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60">
+                              {bill.createdBy || "Operator"}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {bill.customerLocation || bill.customerState ? (
+                              <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-400 text-xs">
+                                {bill.customerLocation || ''}{bill.customerLocation && bill.customerState ? ', ' : ''}{bill.customerState || ''}
+                              </span>
+                            ) : (
+                              <span className="text-slate-450 text-xs italic">Direct</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-600 dark:text-slate-400">{bill.date}</TableCell>
+                          <TableCell className="hidden md:table-cell text-xs">{bill.hoursUsed} hrs</TableCell>
+                          <TableCell className="font-bold text-emerald-600 dark:text-emerald-400">
+                            {currencySymbol}{bill.grandTotal}
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={(e) => handleTogglePaymentStatus(bill.id, bill.paymentStatus || "UNPAID", e)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer border ${
+                                bill.paymentStatus === "PAID"
+                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
+                                  : "bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-100"
+                              }`}
+                              title="Click to toggle Payment Status (Both User & Admin)"
+                            >
+                              {bill.paymentStatus === "PAID" ? "Paid" : "Not Paid"}
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => setSelectedBill(bill)}
+                                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                title="View Invoice Detail"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteClick(bill.id, e)}
+                                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                title="Delete Invoice Record"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -32,6 +32,7 @@ export const create = mutation({
     mobile: v.string(),
     location: v.optional(v.string()),
     state: v.optional(v.string()),
+    pincode: v.optional(v.string()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -52,6 +53,7 @@ export const update = mutation({
     mobile: v.optional(v.string()),
     location: v.optional(v.string()),
     state: v.optional(v.string()),
+    pincode: v.optional(v.string()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

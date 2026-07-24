@@ -14,7 +14,7 @@ import { Textarea } from "../../components/ui/Textarea";
 import { Dialog } from "../../components/ui/Dialog";
 import { Card, CardContent } from "../../components/ui/Card";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "../../components/ui/Table";
-import { Plus, Search, Edit2, Trash2, History, UserPlus, Phone, MapPin, Eye, Calendar, DollarSign, Clock, Users } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, History, UserPlus, Phone, MapPin, Eye, Calendar, DollarSign, Clock, Users, Navigation, Loader2 } from "lucide-react";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { isBillCreatedByUser } from "../../lib/utils";
@@ -28,6 +28,7 @@ const customerSchema = z.object({
     .regex(/^[0-9+\s-()]+$/, "Invalid phone number format"),
   location: z.string().optional(),
   state: z.string().optional(),
+  pincode: z.string().optional(),
   notes: z.string().optional()
 });
 
@@ -41,6 +42,7 @@ export default function CustomersPage() {
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [allBills, setAllBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLocating, setIsLocating] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
@@ -59,10 +61,53 @@ export default function CustomersPage() {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors }
   } = useForm<CustomerFormValues>({
     resolver: zodResolver(customerSchema)
   });
+
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      toast({ type: "error", title: "GPS Unavailable", description: "Your browser does not support GPS location." });
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=en`
+          );
+          const data = await res.json();
+          const address = data.address || {};
+          const town = address.village || address.suburb || address.town || address.city || address.county || "";
+          const state = address.state || "";
+          const pincode = address.postcode || "";
+
+          if (town) setValue("location", town);
+          if (state) setValue("state", state);
+          if (pincode) setValue("pincode", pincode);
+
+          toast({
+            type: "success",
+            title: "Location Auto-Filled",
+            description: `Fetched: ${town}${state ? `, ${state}` : ""}${pincode ? ` (${pincode})` : ""}`
+          });
+        } catch (err) {
+          toast({ type: "error", title: "Reverse Geocode Error", description: "Failed to resolve address coordinates." });
+        } finally {
+          setIsLocating(false);
+        }
+      },
+      (err) => {
+        setIsLocating(false);
+        toast({ type: "error", title: "GPS Error", description: err.message || "Failed to fetch GPS coordinates." });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -103,7 +148,7 @@ export default function CustomersPage() {
   // Create handler
   const onAddSubmit = async (values: CustomerFormValues) => {
     try {
-      await customerService.create(values, orgId || undefined);
+      const newCust = await customerService.create(values, orgId || undefined);
       toast({
         type: "success",
         title: "Customer Added",
@@ -111,6 +156,12 @@ export default function CustomersPage() {
       });
       setIsAddOpen(false);
       reset();
+
+      // Instant optimistic state update
+      setCustomers((prev) => [newCust, ...prev.filter((c) => c.id !== newCust.id)]);
+      setFilteredCustomers((prev) => [newCust, ...prev.filter((c) => c.id !== newCust.id)]);
+
+      // Background re-fetch
       loadData();
     } catch (error: any) {
       toast({
@@ -138,7 +189,7 @@ export default function CustomersPage() {
   const onEditSubmit = async (values: CustomerFormValues) => {
     if (!selectedCustomer) return;
     try {
-      await customerService.update(selectedCustomer.id, values);
+      const updated = await customerService.update(selectedCustomer.id, values);
       toast({
         type: "success",
         title: "Customer Updated",
@@ -147,6 +198,11 @@ export default function CustomersPage() {
       setIsEditOpen(false);
       reset();
       setSelectedCustomer(null);
+
+      // Instant optimistic state update
+      setCustomers((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+      setFilteredCustomers((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+
       loadData();
     } catch (error: any) {
       toast({
@@ -166,8 +222,9 @@ export default function CustomersPage() {
   // Delete handler
   const handleDeleteConfirm = async () => {
     if (!selectedCustomer) return;
+    const deletedId = selectedCustomer.id;
     try {
-      await customerService.delete(selectedCustomer.id);
+      await customerService.delete(deletedId);
       toast({
         type: "success",
         title: "Customer Deleted",
@@ -175,6 +232,11 @@ export default function CustomersPage() {
       });
       setIsDeleteOpen(false);
       setSelectedCustomer(null);
+
+      // Instant optimistic state update
+      setCustomers((prev) => prev.filter((c) => c.id !== deletedId));
+      setFilteredCustomers((prev) => prev.filter((c) => c.id !== deletedId));
+
       loadData();
     } catch (error: any) {
       toast({
@@ -213,7 +275,7 @@ export default function CustomersPage() {
             reset({ name: "", mobile: "", location: "", state: "", notes: "" });
             setIsAddOpen(true);
           }}
-          className="sm:w-auto cursor-pointer"
+          className="w-full sm:w-auto cursor-pointer"
         >
           <Plus className="h-4.5 w-4.5" />
           Add Customer
@@ -256,71 +318,130 @@ export default function CustomersPage() {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Mobile Number</TableHead>
-                  <TableHead>Location & State</TableHead>
-                  <TableHead className="hidden md:table-cell">Registered Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <div>
+              {/* Mobile Cards View */}
+              <div className="grid grid-cols-1 gap-3 md:hidden">
                 {filteredCustomers.map((cust) => (
-                  <TableRow key={cust.id}>
-                    <TableCell className="font-medium text-slate-900 dark:text-white">
-                      {cust.name}
-                    </TableCell>
-                    <TableCell className="text-slate-600 dark:text-slate-400 font-mono text-xs">
-                      {cust.mobile}
-                    </TableCell>
-                    <TableCell>
-                      {cust.location || cust.state ? (
-                        <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-400">
-                          <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
-                          {cust.location || ''}{cust.location && cust.state ? ', ' : ''}{cust.state || ''}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-xs italic">Not specified</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-slate-500 text-xs">
-                      {new Date(cust.createdAt).toLocaleDateString("en-IN", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric"
-                      })}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                  <div
+                    key={cust.id}
+                    className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                      <div>
+                        <p className="font-bold text-sm text-slate-900 dark:text-white">{cust.name}</p>
+                        <p className="text-xs font-mono text-slate-500">{cust.mobile}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleHistoryClick(cust)}
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
                           title="Billing History"
                         >
                           <History className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleEditClick(cust)}
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
                           title="Edit Customer"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDeleteClick(cust)}
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
                           title="Delete Customer"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+
+                    <div className="text-xs space-y-1">
+                      {cust.location || cust.state ? (
+                        <p className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                          <MapPin className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                          <span>{cust.location || ''}{cust.location && cust.state ? ', ' : ''}{cust.state || ''}</span>
+                        </p>
+                      ) : (
+                        <p className="text-slate-400 italic">No location specified</p>
+                      )}
+                      <p className="text-[10px] text-slate-400">
+                        Added: {new Date(cust.createdAt).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" })}
+                      </p>
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Mobile Number</TableHead>
+                      <TableHead>Location & State</TableHead>
+                      <TableHead className="hidden md:table-cell">Registered Date</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCustomers.map((cust) => (
+                      <TableRow key={cust.id}>
+                        <TableCell className="font-medium text-slate-900 dark:text-white">
+                          {cust.name}
+                        </TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400 font-mono text-xs">
+                          {cust.mobile}
+                        </TableCell>
+                        <TableCell>
+                          {cust.location || cust.state ? (
+                            <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                              <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
+                              {cust.location || ''}{cust.location && cust.state ? ', ' : ''}{cust.state || ''}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs italic">Not specified</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell text-slate-500 text-xs">
+                          {new Date(cust.createdAt).toLocaleDateString("en-IN", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric"
+                          })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleHistoryClick(cust)}
+                              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Billing History"
+                            >
+                              <History className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleEditClick(cust)}
+                              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Edit Customer"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(cust)}
+                              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Delete Customer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -351,18 +472,40 @@ export default function CustomersPage() {
             error={errors.mobile?.message}
             {...register("mobile")}
           />
-          <div className="grid grid-cols-2 gap-4">
+          {/* Location Detection Header */}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Address & Location Details</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleGetLocation}
+              isLoading={isLocating}
+              className="h-7 text-[11px] gap-1 border-emerald-600/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            >
+              <Navigation className="h-3 w-3 text-emerald-600" />
+              Use Current GPS Location
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Input
-              label="Location (Town/Village)"
+              label="Town / Village"
               placeholder="e.g. Hebbal"
               error={errors.location?.message}
               {...register("location")}
             />
             <Input
-              label="State Name"
+              label="State"
               placeholder="e.g. Karnataka"
               error={errors.state?.message}
               {...register("state")}
+            />
+            <Input
+              label="Pincode"
+              placeholder="e.g. 560024"
+              error={errors.pincode?.message}
+              {...register("pincode")}
             />
           </div>
           <Textarea
@@ -400,18 +543,40 @@ export default function CustomersPage() {
             error={errors.mobile?.message}
             {...register("mobile")}
           />
-          <div className="grid grid-cols-2 gap-4">
+          
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Address & Location Details</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleGetLocation}
+              isLoading={isLocating}
+              className="h-7 text-[11px] gap-1 border-emerald-600/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+            >
+              <Navigation className="h-3 w-3 text-emerald-600" />
+              Use Current GPS Location
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Input
-              label="Location (Town/Village)"
+              label="Town / Village"
               placeholder="e.g. Hebbal"
               error={errors.location?.message}
               {...register("location")}
             />
             <Input
-              label="State Name"
+              label="State"
               placeholder="e.g. Karnataka"
               error={errors.state?.message}
               {...register("state")}
+            />
+            <Input
+              label="Pincode"
+              placeholder="e.g. 560024"
+              error={errors.pincode?.message}
+              {...register("pincode")}
             />
           </div>
           <Textarea

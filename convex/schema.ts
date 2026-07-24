@@ -8,6 +8,7 @@ export default defineSchema({
     mobile: v.string(),
     location: v.optional(v.string()),
     state: v.optional(v.string()),
+    pincode: v.optional(v.string()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_org", ["orgId"]),
@@ -36,7 +37,13 @@ export default defineSchema({
       v.literal("REJECTED"),
       v.literal("IN_PROGRESS")
     ),
-    paymentStatus: v.union(v.literal("PAID"), v.literal("UNPAID")),
+    paymentStatus: v.union(
+      v.literal("PAID"),
+      v.literal("UNPAID"),
+      v.literal("PARTIAL_PAID")
+    ),
+    amountPaid: v.optional(v.number()),
+    balanceAmount: v.optional(v.number()),
     createdBy: v.optional(v.string()),
     createdByEmail: v.optional(v.string()),
     createdAt: v.number(),

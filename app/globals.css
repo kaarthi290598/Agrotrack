@@ -26,6 +26,25 @@ body {
 }
 
 /* ==========================================================================
+   Clerk Components Dark Mode Overrides
+   ========================================================================== */
+.cl-userButtonOuterIdentifier {
+  color: #0f172a;
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+
+.dark .cl-userButtonOuterIdentifier {
+  color: #f8fafc !important;
+}
+
+.dark .cl-organizationSwitcherTrigger,
+.dark .cl-organizationSwitcherTrigger span,
+.dark .cl-userButtonPopoverCard {
+  color: #f8fafc !important;
+}
+
+/* ==========================================================================
    Print Stylesheet for Invoice PDF Export
    ========================================================================== */
 @media print {

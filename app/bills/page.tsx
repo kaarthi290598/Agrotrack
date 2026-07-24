@@ -31,7 +31,9 @@ import {
   Printer,
   Receipt,
   IndianRupee,
-  Plus
+  Plus,
+  ArrowUpDown,
+  Calendar
 } from "lucide-react";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 
@@ -50,7 +52,20 @@ function BillsListInner() {
 
   // Filter & Search
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED">("ALL");
+  const [paymentFilterStatus, setPaymentFilterStatus] = useState<"ALL" | "PAID" | "PARTIAL_PAID" | "UNPAID">("ALL");
+  const [monthFilter, setMonthFilter] = useState<string>("CURRENT_MONTH");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"NEWEST" | "OLDEST" | "AMOUNT_HIGH" | "AMOUNT_LOW" | "INVOICE_NO">("NEWEST");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Multi-Select Bulk Actions State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Partial Payment Modal State
+  const [paymentModalBill, setPaymentModalBill] = useState<Bill | null>(null);
+  const [partialPaymentStatus, setPartialPaymentStatus] = useState<"PAID" | "UNPAID" | "PARTIAL_PAID">("UNPAID");
+  const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
 
   // Edit Bill Modal State
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -89,7 +104,70 @@ function BillsListInner() {
     fetchAllData();
   }, [searchParams, toast, orgId]);
 
-  // Approval Handlers
+  // Bulk Selection Handlers
+  const toggleSelectAll = (visibleBills: Bill[]) => {
+    if (selectedIds.length === visibleBills.length && visibleBills.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(visibleBills.map((b) => b.id));
+    }
+  };
+
+  const toggleSelectBill = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await billingService.bulkApprove(selectedIds);
+      toast({ type: "success", title: "Bulk Approved", description: `Approved ${selectedIds.length} bills.` });
+      setSelectedIds([]);
+      fetchAllData();
+    } catch (err: any) {
+      toast({ type: "error", title: "Bulk Error", description: err.message || "Failed to approve bills." });
+    }
+  };
+
+  const handleBulkReject = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await billingService.bulkReject(selectedIds);
+      toast({ type: "info", title: "Bulk Rejected", description: `Rejected ${selectedIds.length} bills.` });
+      setSelectedIds([]);
+      fetchAllData();
+    } catch (err: any) {
+      toast({ type: "error", title: "Bulk Error", description: err.message || "Failed to reject bills." });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!isAdmin) {
+      toast({ type: "error", title: "Access Denied", description: "Only Admins can bulk delete bills." });
+      return;
+    }
+    if (!confirm(`Are you sure you want to permanently delete ${selectedIds.length} bills?`)) return;
+    try {
+      await billingService.bulkDelete(selectedIds);
+      toast({ type: "success", title: "Bulk Deleted", description: `Deleted ${selectedIds.length} bills.` });
+      setSelectedIds([]);
+      fetchAllData();
+    } catch (err: any) {
+      toast({ type: "error", title: "Bulk Error", description: err.message || "Failed to delete bills." });
+    }
+  };
+
+  // Payment Status & Partial Payment Modal Handlers
+  const handleOpenPaymentModal = (bill: Bill) => {
+    setPaymentModalBill(bill);
+    setPartialPaymentStatus(bill.paymentStatus || "UNPAID");
+    setPartialPaidAmount(bill.amountPaid !== undefined ? String(bill.amountPaid) : "");
+  };
+
+  // Approval & Single Bill Handlers
   const handleApproveBill = async (id: string) => {
     try {
       await billingService.approve(id);
@@ -107,24 +185,6 @@ function BillsListInner() {
       fetchAllData();
     } catch (err: any) {
       toast({ type: "error", title: "Error", description: err.message || "Failed to reject bill." });
-    }
-  };
-
-  const handleTogglePaymentStatus = async (id: string, currentStatus: "PAID" | "UNPAID") => {
-    const nextStatus = currentStatus === "PAID" ? "UNPAID" : "PAID";
-    try {
-      await billingService.updatePaymentStatus(id, nextStatus);
-      toast({
-        type: "success",
-        title: `Marked as ${nextStatus === "PAID" ? "Paid" : "Not Paid"}`,
-        description: `Payment status updated to ${nextStatus}.`
-      });
-      fetchAllData();
-      if (viewInvoice && viewInvoice.id === id) {
-        setViewInvoice({ ...viewInvoice, paymentStatus: nextStatus });
-      }
-    } catch (err: any) {
-      toast({ type: "error", title: "Error", description: err.message || "Failed to update payment status." });
     }
   };
 
@@ -147,55 +207,49 @@ function BillsListInner() {
     router.push(`/billing?editBillId=${bill.id}`);
   };
 
-  const handleSaveEditedBill = async () => {
-    if (!editingBill) return;
-    const hoursNum = parseFloat(editHours);
-    if (isNaN(hoursNum) || hoursNum <= 0) {
-      toast({ type: "error", title: "Validation Error", description: "Hours used must be greater than zero." });
-      return;
-    }
-
-    const discountVal = parseFloat(editDiscount) || 0;
-    const extraTotal = editingBill.extraCharges.reduce((s, c) => s + c.amount, 0);
-    const usageCost = hoursNum * editingBill.hourlyRate;
-    const grandTotal = usageCost + extraTotal - discountVal;
-
-    try {
-      await billingService.update(editingBill.id, {
-        hoursUsed: hoursNum,
-        startTime: editStartTime || undefined,
-        endTime: editEndTime || undefined,
-        discount: discountVal,
-        grandTotal,
-        status: "PENDING_APPROVAL" // Always send for reapproval when edited
-      });
-
-      toast({
-        type: "success",
-        title: "Bill Updated",
-        description: "Bill updated and sent for Admin reapproval."
-      });
-
-      setEditingBill(null);
-      fetchAllData();
-    } catch (err: any) {
-      toast({ type: "error", title: "Update Failed", description: err.message || "Could not update bill." });
-    }
-  };
-
   const handleViewInvoice = (bill: Bill) => {
-    const cust = customers.find(c => c.id === bill.customerId);
+    const cust = customerMap.get(bill.customerId);
     setViewInvoice({
       ...bill,
       customerName: cust?.name || "Unknown Farmer",
-      customerMobile: cust?.mobile || "",
-      customerLocation: cust?.location || "",
-      customerState: cust?.state || ""
+      customerMobile: cust?.mobile || "N/A",
+      customerLocation: cust?.location,
+      customerState: cust?.state
     });
   };
 
   const handlePrint = () => {
     window.print();
+  };
+
+  // Save Payment Status (Full / Unpaid / Partial)
+  const handleSavePaymentStatus = async () => {
+    if (!paymentModalBill) return;
+    const paidNum = parseFloat(partialPaidAmount) || 0;
+    if (partialPaymentStatus === "PARTIAL_PAID" && (paidNum < 0 || paidNum > paymentModalBill.grandTotal)) {
+      toast({ type: "error", title: "Validation Error", description: "Partial paid amount must be between 0 and bill Grand Total." });
+      return;
+    }
+    try {
+      await billingService.updatePaymentStatus(paymentModalBill.id, partialPaymentStatus, paidNum);
+      toast({
+        type: "success",
+        title: "Payment Updated",
+        description: `Marked bill ${paymentModalBill.invoiceNumber} as ${partialPaymentStatus.replace("_", " ")}.`
+      });
+      setPaymentModalBill(null);
+      fetchAllData();
+      if (viewInvoice && viewInvoice.id === paymentModalBill.id) {
+        setViewInvoice({
+          ...viewInvoice,
+          paymentStatus: partialPaymentStatus,
+          amountPaid: partialPaymentStatus === "PARTIAL_PAID" ? paidNum : partialPaymentStatus === "PAID" ? viewInvoice.grandTotal : 0,
+          balanceAmount: partialPaymentStatus === "PARTIAL_PAID" ? Math.max(0, viewInvoice.grandTotal - paidNum) : partialPaymentStatus === "PAID" ? 0 : viewInvoice.grandTotal
+        });
+      }
+    } catch (err: any) {
+      toast({ type: "error", title: "Error", description: err.message || "Failed to update payment status." });
+    }
   };
 
   if (!isLoaded || !settings) {
@@ -212,18 +266,56 @@ function BillsListInner() {
   // First scope bills based on user role (Admin sees all, Member sees their own)
   const userBills = bills.filter((b) => isBillCreatedByUser(b, user, isAdmin));
 
-  // Filter bills by search & status tab
-  const filteredBills = userBills.filter((b) => {
-    if (filterStatus !== "ALL" && b.status !== filterStatus) return false;
-    if (searchQuery) {
-      const cName = customerMap.get(b.customerId)?.name || "";
-      return (
-        b.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        cName.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    return true;
-  });
+  // Filter bills by search, approval status, payment status, and month/date range
+  const filteredBills = userBills
+    .filter((b) => {
+      if (filterStatus !== "ALL" && b.status !== filterStatus) return false;
+      if (paymentFilterStatus !== "ALL" && b.paymentStatus !== paymentFilterStatus) return false;
+
+      // Month & Date Filtering
+      if (monthFilter === "CURRENT_MONTH") {
+        const now = new Date();
+        const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        if (!b.date || !b.date.startsWith(currentMonthPrefix)) return false;
+      } else if (monthFilter === "LAST_MONTH") {
+        const d = new Date();
+        d.setMonth(d.getMonth() - 1);
+        const lastMonthPrefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (!b.date || !b.date.startsWith(lastMonthPrefix)) return false;
+      } else if (monthFilter === "CUSTOM") {
+        if (startDate && b.date < startDate) return false;
+        if (endDate && b.date > endDate) return false;
+      } else if (monthFilter !== "ALL_TIME" && monthFilter) {
+        if (!b.date || !b.date.startsWith(monthFilter)) return false;
+      }
+
+      if (searchQuery) {
+        const cName = customerMap.get(b.customerId)?.name || "";
+        return (
+          b.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          cName.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "NEWEST") {
+        return (b.createdAt || 0) - (a.createdAt || 0) || b.invoiceNumber.localeCompare(a.invoiceNumber);
+      }
+      if (sortBy === "OLDEST") {
+        return (a.createdAt || 0) - (b.createdAt || 0) || a.invoiceNumber.localeCompare(b.invoiceNumber);
+      }
+      if (sortBy === "AMOUNT_HIGH") {
+        return b.grandTotal - a.grandTotal;
+      }
+      if (sortBy === "AMOUNT_LOW") {
+        return a.grandTotal - b.grandTotal;
+      }
+      if (sortBy === "INVOICE_NO") {
+        return b.invoiceNumber.localeCompare(a.invoiceNumber);
+      }
+      return 0;
+    });
 
   const totalValue = userBills.reduce((acc, b) => acc + b.grandTotal, 0);
   const paidBillsCount = userBills.filter(b => b.paymentStatus === "PAID").length;
@@ -322,266 +414,249 @@ function BillsListInner() {
         </div>
       )}
 
-      {/* Screen Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* ═══════════ Page Header ═══════════ */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-              {isAdmin ? "Bills List & Approvals Queue" : "My Generated Bills"}
-            </h1>
-            {isAdmin && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 px-2.5 py-0.5 text-xs font-bold border border-purple-200 dark:border-purple-800">
-                <ShieldCheck className="h-3.5 w-3.5" /> Admin
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+            {isAdmin ? "Bills & Approvals" : "My Bills"}
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {isAdmin 
-              ? "Comprehensive record of all billing invoices. Review, approve, or reject."
-              : "List of all machinery rental bills generated by you. View details and track status."
-            }
+              ? "Review, approve, and manage all billing invoices" 
+              : "Track your generated bills and their status"}
           </p>
         </div>
-
-        <Link href="/billing" passHref>
-          <Button variant="primary" className="cursor-pointer gap-2">
-            <Plus className="h-4 w-4" />
-            Generate New Bill
+        <Link href="/billing" passHref className="w-full sm:w-auto shrink-0">
+          <Button variant="primary" className="w-full sm:w-auto cursor-pointer gap-2 shadow-md shadow-emerald-600/20">
+            <Plus className="h-4 w-4" /> New Bill
           </Button>
         </Link>
       </div>
 
-      {/* Metric Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total Bills</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{userBills.length}</p>
-            </div>
-            <div className="h-9 w-9 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <Receipt className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total Value</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{currencySymbol}{totalValue.toLocaleString()}</p>
-            </div>
-            <div className="h-9 w-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <IndianRupee className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Paid / Pending Approval</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{paidBillsCount} Paid / {pendingCount} Pending</p>
-            </div>
-            <div className="h-9 w-9 rounded-lg bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <Clock className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* ═══════════ Stat Cards ═══════════ */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-emerald-900/20 border border-emerald-200/60 dark:border-emerald-800/40 p-3.5">
+          <p className="text-[10px] font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider">Total Bills</p>
+          <p className="text-xl font-extrabold text-emerald-900 dark:text-emerald-300 mt-1 font-mono">{userBills.length}</p>
+        </div>
+        <div className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/20 border border-blue-200/60 dark:border-blue-800/40 p-3.5">
+          <p className="text-[10px] font-bold text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider">Total Value</p>
+          <p className="text-xl font-extrabold text-blue-900 dark:text-blue-300 mt-1 font-mono">{currencySymbol}{totalValue.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl bg-gradient-to-br from-violet-50 to-violet-100/50 dark:from-violet-950/40 dark:to-violet-900/20 border border-violet-200/60 dark:border-violet-800/40 p-3.5">
+          <p className="text-[10px] font-bold text-violet-600/70 dark:text-violet-400/70 uppercase tracking-wider">Paid</p>
+          <p className="text-xl font-extrabold text-violet-900 dark:text-violet-300 mt-1 font-mono">{paidBillsCount}</p>
+        </div>
+        <div className="rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/40 dark:to-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 p-3.5">
+          <p className="text-[10px] font-bold text-amber-600/70 dark:text-amber-400/70 uppercase tracking-wider">Pending</p>
+          <p className="text-xl font-extrabold text-amber-900 dark:text-amber-300 mt-1 font-mono">{pendingCount}</p>
+        </div>
       </div>
 
-      {/* Main Approval Table Card */}
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            {/* Search Bar */}
-            <div className="relative flex-1 max-w-sm">
+      {/* ═══════════ Filter & List Card ═══════════ */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
+        
+        {/* ── Search & Controls Row ── */}
+        <div className="p-4 space-y-3 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search by invoice # or farmer name..."
+                placeholder="Search invoice or farmer..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-4 text-xs text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 py-2 pl-9 pr-8 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20 focus:outline-none transition-all"
               />
+              {searchQuery && (
+                <button type="button" onClick={() => setSearchQuery("")} className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-
-            {/* Filter Tabs */}
-            <div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200/60 dark:border-slate-700/60 text-xs">
-              {(["ALL", "PENDING_APPROVAL", "APPROVED", "REJECTED"] as const).map((st) => {
-                const count = userBills.filter((b) => st === "ALL" || b.status === st).length;
-                const isActive = filterStatus === st;
-                let label = st === "ALL" ? "All" : st === "PENDING_APPROVAL" ? "Pending" : st === "APPROVED" ? "Approved" : "Rejected";
-                return (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => setFilterStatus(st)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-semibold transition-all cursor-pointer ${
-                      isActive
-                        ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-                    }`}
-                  >
-                    <span>{label}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                      st === "PENDING_APPROVAL" ? "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300" :
-                      st === "APPROVED" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300" :
-                      st === "REJECTED" ? "bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300" :
-                      "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300"
-                    }`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 px-2.5 py-2 text-xs shrink-0">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+              <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="bg-transparent font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer text-xs">
+                <option value="CURRENT_MONTH">This Month</option>
+                <option value="LAST_MONTH">Last Month</option>
+                <option value="ALL_TIME">All Time</option>
+                <option value="CUSTOM">Custom Range</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 px-2.5 py-2 text-xs shrink-0">
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="bg-transparent font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer text-xs">
+                <option value="NEWEST">Newest First</option>
+                <option value="OLDEST">Oldest First</option>
+                <option value="AMOUNT_HIGH">Amount ↓</option>
+                <option value="AMOUNT_LOW">Amount ↑</option>
+                <option value="INVOICE_NO">Invoice #</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] font-medium text-slate-400"><strong className="text-slate-600 dark:text-slate-300 font-mono">{filteredBills.length}</strong>/{userBills.length}</span>
+              {(filterStatus !== "ALL" || paymentFilterStatus !== "ALL" || monthFilter !== "CURRENT_MONTH" || searchQuery) && (
+                <button type="button" onClick={() => { setFilterStatus("ALL"); setPaymentFilterStatus("ALL"); setMonthFilter("CURRENT_MONTH"); setSearchQuery(""); setStartDate(""); setEndDate(""); }} className="text-[10px] font-bold text-rose-500 hover:text-rose-600 cursor-pointer">Reset</button>
+              )}
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
+          {monthFilter === "CUSTOM" && (
+            <div className="flex items-center gap-2 pl-1 animate-in fade-in duration-200">
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-300" />
+              <span className="text-slate-400 text-[10px] font-bold">→</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-300" />
+            </div>
+          )}
+        </div>
+
+        {/* ── Filter Pill Row ── */}
+        <div className="flex flex-col sm:flex-row gap-3 px-4 py-2.5 bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center gap-1 overflow-x-auto">
+            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mr-1 shrink-0">Status</span>
+            {(["ALL", "PENDING_APPROVAL", "APPROVED", "REJECTED"] as const).map((st) => {
+              const count = userBills.filter((b) => st === "ALL" || b.status === st).length;
+              const isActive = filterStatus === st;
+              const label = st === "ALL" ? "All" : st === "PENDING_APPROVAL" ? "Pending" : st === "APPROVED" ? "Approved" : "Rejected";
+              return (
+                <button key={st} type="button" onClick={() => setFilterStatus(st)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${isActive ? "bg-emerald-600 text-white shadow-sm" : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-slate-300"}`}>
+                  {label} <span className={`text-[9px] font-mono ${isActive ? "text-emerald-200" : "text-slate-400"}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="hidden sm:block w-px bg-slate-200 dark:bg-slate-800 self-stretch" />
+          <div className="flex items-center gap-1 overflow-x-auto">
+            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest mr-1 shrink-0">Payment</span>
+            {(["ALL", "PAID", "PARTIAL_PAID", "UNPAID"] as const).map((pst) => {
+              const count = userBills.filter((b) => pst === "ALL" || b.paymentStatus === pst).length;
+              const isActive = paymentFilterStatus === pst;
+              const label = pst === "ALL" ? "All" : pst === "PAID" ? "Paid" : pst === "PARTIAL_PAID" ? "Partial" : "Unpaid";
+              return (
+                <button key={pst} type="button" onClick={() => setPaymentFilterStatus(pst)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${isActive ? "bg-emerald-600 text-white shadow-sm" : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:border-slate-300"}`}>
+                  {label} <span className={`text-[9px] font-mono ${isActive ? "text-emerald-200" : "text-slate-400"}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ═══════════ Bill List Content ═══════════ */}
+        <div>
           {filteredBills.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 dark:text-slate-400">
-              <Clock className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-              <p className="font-semibold text-sm">No bills found in this section.</p>
+            <div className="py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
+                <Receipt className="h-5 w-5 text-slate-400" />
+              </div>
+              <p className="font-semibold text-sm text-slate-600 dark:text-slate-300">No bills found</p>
+              <p className="text-xs text-slate-400 mt-1">Try adjusting your filters or create a new bill</p>
             </div>
           ) : (
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
-              <div className="overflow-x-auto">
+            <>
+              {/* Mobile Card View */}
+              <div className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800/80 md:hidden">
+                {filteredBills.map((bill) => {
+                  const cust = customerMap.get(bill.customerId);
+                  const isSelected = selectedIds.includes(bill.id);
+                  return (
+                    <div key={bill.id} className={`p-4 transition-colors ${isSelected ? "bg-emerald-50/40 dark:bg-emerald-950/20" : "hover:bg-slate-50/50 dark:hover:bg-slate-900/30"}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5">
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleSelectBill(bill.id)} className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer mt-0.5" />
+                          <div>
+                            <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">{bill.invoiceNumber}</span>
+                            <span className="text-[10px] text-slate-400 ml-2">{bill.date}</span>
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mt-0.5">{cust?.name || "Unknown"}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400">{currencySymbol}{bill.grandTotal}</span>
+                          {bill.status === "APPROVED" ? (
+                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">Approved</span>
+                          ) : bill.status === "PENDING_APPROVAL" ? (
+                            <span className="text-[9px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded">Pending</span>
+                          ) : bill.status === "IN_PROGRESS" ? (
+                            <span className="text-[9px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">Live</span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/50 px-1.5 py-0.5 rounded">Rejected</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/60">
+                        <button type="button" onClick={() => handleOpenPaymentModal(bill)} className={`text-[10px] font-bold px-2.5 py-1 rounded-full cursor-pointer ${bill.paymentStatus === "PAID" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : bill.paymentStatus === "PARTIAL_PAID" ? "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"}`}>
+                          {bill.paymentStatus === "PAID" ? "✓ Paid" : bill.paymentStatus === "PARTIAL_PAID" ? "Partial" : "Unpaid"}
+                        </button>
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => handleViewInvoice(bill)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="View Invoice"><Receipt className="h-3.5 w-3.5" /></button>
+                          {isAdmin && bill.status === "PENDING_APPROVAL" && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
+                          {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || isAdmin) && (<button type="button" onClick={() => handleOpenEditModal(bill)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>)}
+                          {isAdmin && (<button type="button" onClick={() => handleDeleteBill(bill.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead>Farmer</TableHead>
-                      <TableHead>Created By</TableHead>
-                      <TableHead>Date & Time</TableHead>
-                      <TableHead>Usage / Rate</TableHead>
-                      <TableHead>Grand Total</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Payment</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                    <TableRow className="bg-slate-50/80 dark:bg-slate-900/60">
+                      <TableHead className="w-10">
+                        <input type="checkbox" checked={selectedIds.length === filteredBills.length && filteredBills.length > 0} onChange={() => toggleSelectAll(filteredBills)} className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
+                      </TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Invoice</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Farmer</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Operator</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Date</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Usage</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Amount</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Status</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Payment</TableHead>
+                      <TableHead className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredBills.map((bill) => {
                       const cust = customerMap.get(bill.customerId);
+                      const isSelected = selectedIds.includes(bill.id);
                       return (
-                        <TableRow key={bill.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                          <TableCell className="font-bold text-slate-900 dark:text-slate-100">
-                            {bill.invoiceNumber}
-                          </TableCell>
+                        <TableRow key={bill.id} className={`hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-colors ${isSelected ? "bg-emerald-50/30 dark:bg-emerald-950/10" : ""}`}>
+                          <TableCell className="w-10"><input type="checkbox" checked={isSelected} onChange={() => toggleSelectBill(bill.id)} className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" /></TableCell>
+                          <TableCell><span className="font-mono font-bold text-xs text-slate-900 dark:text-white">{bill.invoiceNumber}</span></TableCell>
                           <TableCell>
-                            <div>
-                              <p className="font-semibold text-slate-800 dark:text-slate-200">{cust?.name || "Unknown Customer"}</p>
-                              <span className="text-[10px] text-slate-400">{cust?.mobile}</span>
-                            </div>
+                            <p className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate max-w-[140px]">{cust?.name || "Unknown"}</p>
+                            <span className="text-[10px] text-slate-400">{cust?.mobile}</span>
                           </TableCell>
-                          <TableCell>
-                            <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60">
-                              {bill.createdBy || "Operator"}
-                            </span>
-                          </TableCell>
+                          <TableCell><span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">{bill.createdBy || "Operator"}</span></TableCell>
                           <TableCell className="text-xs text-slate-600 dark:text-slate-400">
                             <div>{bill.date}</div>
-                            {bill.startTime && (
-                              <span className="text-[10px] text-slate-500">{bill.startTime} - {bill.endTime || "Live"}</span>
-                            )}
+                            {bill.startTime && <span className="text-[10px] text-slate-400">{bill.startTime} – {bill.endTime || "Live"}</span>}
                           </TableCell>
-                          <TableCell className="text-xs">
-                            {bill.hoursUsed} hrs × {currencySymbol}{bill.hourlyRate}
-                          </TableCell>
-                          <TableCell className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                            {currencySymbol}{bill.grandTotal}
-                          </TableCell>
+                          <TableCell className="text-xs text-slate-600 dark:text-slate-400">{bill.hoursUsed}h × {currencySymbol}{bill.hourlyRate}</TableCell>
+                          <TableCell><span className="font-mono font-bold text-xs text-emerald-600 dark:text-emerald-400">{currencySymbol}{bill.grandTotal}</span></TableCell>
                           <TableCell>
                             {bill.status === "APPROVED" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
-                                <CheckCircle2 className="h-3 w-3" /> Approved
-                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"><CheckCircle2 className="h-3 w-3" /> Approved</span>
                             ) : bill.status === "PENDING_APPROVAL" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
-                                <Clock className="h-3 w-3" /> Pending
-                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"><Clock className="h-3 w-3" /> Pending</span>
                             ) : bill.status === "IN_PROGRESS" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
-                                <Clock className="h-3 w-3 animate-spin text-blue-500" /> Live
-                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"><Clock className="h-3 w-3 animate-spin" /> Live</span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60">
-                                <XCircle className="h-3 w-3" /> Rejected
-                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"><XCircle className="h-3 w-3" /> Rejected</span>
                             )}
                           </TableCell>
                           <TableCell>
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePaymentStatus(bill.id, bill.paymentStatus || "UNPAID")}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer border ${
-                                bill.paymentStatus === "PAID"
-                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100"
-                                  : "bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-100"
-                              }`}
-                              title="Click to toggle payment status (Both User & Admin)"
-                            >
-                              {bill.paymentStatus === "PAID" ? "✓ Paid" : "Unpaid"}
+                            <button type="button" onClick={() => handleOpenPaymentModal(bill)} className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-colors ${bill.paymentStatus === "PAID" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400" : bill.paymentStatus === "PARTIAL_PAID" ? "bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950/40 dark:text-orange-400" : "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-400"}`} title="Manage payment">
+                              {bill.paymentStatus === "PAID" ? "✓ Paid" : bill.paymentStatus === "PARTIAL_PAID" ? "Partial" : "Unpaid"}
                             </button>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* View / Print Invoice Button */}
-                              <button
-                                type="button"
-                                onClick={() => handleViewInvoice(bill)}
-                                className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-                                title="View & Print Invoice"
-                              >
-                                <Receipt className="h-4 w-4" />
-                              </button>
-
-                              {/* Admin Approve & Reject Buttons */}
-                              {isAdmin && bill.status === "PENDING_APPROVAL" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleApproveBill(bill.id)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
-                                    title="Approve Bill"
-                                  >
-                                    <Check className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRejectBill(bill.id)}
-                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer"
-                                    title="Reject Bill"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                </>
-                              )}
-
-                              {/* User/Admin Edit & Resubmit */}
-                              {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || isAdmin) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditModal(bill)}
-                                  className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-                                  title={isAdmin ? "Edit Bill Details" : "Edit & Resubmit for Reapproval"}
-                                >
-                                  <Edit3 className="h-4 w-4" />
-                                </button>
-                              )}
-
-                              {/* Admin Only Delete Button */}
-                              {isAdmin && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteBill(bill.id)}
-                                  className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-                                  title="Delete Bill (Admin Only)"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              )}
+                            <div className="flex items-center justify-end gap-1">
+                              <button type="button" onClick={() => handleViewInvoice(bill)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="View Invoice"><Receipt className="h-3.5 w-3.5" /></button>
+                              {isAdmin && bill.status === "PENDING_APPROVAL" && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1 bg-rose-600 text-white rounded-md hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
+                              {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || isAdmin) && (<button type="button" onClick={() => handleOpenEditModal(bill)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>)}
+                              {isAdmin && (<button type="button" onClick={() => handleDeleteBill(bill.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>)}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -590,10 +665,152 @@ function BillsListInner() {
                   </TableBody>
                 </Table>
               </div>
-            </div>
+            </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      {/* Floating Bulk Actions Bar */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 animate-in slide-in-from-bottom duration-200 text-xs font-semibold max-w-[95vw]">
+          <span className="bg-emerald-600 text-white px-2.5 py-1 rounded-full font-bold">
+            {selectedIds.length} Selected
+          </span>
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={handleBulkApprove}
+                className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <Check className="h-3.5 w-3.5" /> Approve
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkReject}
+                className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" /> Reject
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="flex items-center gap-1 bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setSelectedIds([])}
+            className="text-slate-400 hover:text-white px-2 py-1 transition-colors cursor-pointer ml-1"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Partial Payment Modal */}
+      <Dialog
+        isOpen={paymentModalBill !== null}
+        onClose={() => setPaymentModalBill(null)}
+        title="Manage Payment & Partial Amount"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPaymentModalBill(null)} className="cursor-pointer">Cancel</Button>
+            <Button variant="primary" onClick={handleSavePaymentStatus} className="cursor-pointer">Save Payment Status</Button>
+          </>
+        }
+      >
+        {paymentModalBill && (
+          <div className="space-y-4 text-xs">
+            <div className="rounded-xl bg-slate-50 dark:bg-slate-900 p-3 border border-slate-200 dark:border-slate-800 space-y-1">
+              <div className="flex justify-between font-bold">
+                <span>Invoice #{paymentModalBill.invoiceNumber}</span>
+                <span className="text-emerald-600 font-mono text-sm">Total: {currencySymbol}{paymentModalBill.grandTotal}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Select Status Option</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPartialPaymentStatus("UNPAID")}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    partialPaymentStatus === "UNPAID"
+                      ? "bg-amber-50 border-amber-400 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                      : "bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400"
+                  }`}
+                >
+                  Unpaid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartialPaymentStatus("PARTIAL_PAID");
+                    if (!partialPaidAmount && paymentModalBill) {
+                      setPartialPaidAmount(String(Math.round(paymentModalBill.grandTotal / 2)));
+                    }
+                  }}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    partialPaymentStatus === "PARTIAL_PAID"
+                      ? "bg-orange-50 border-orange-400 text-orange-900 dark:bg-orange-950/60 dark:text-orange-200"
+                      : "bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400"
+                  }`}
+                >
+                  Partial Paid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPartialPaymentStatus("PAID");
+                    if (paymentModalBill) {
+                      setPartialPaidAmount(String(paymentModalBill.grandTotal));
+                    }
+                  }}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                    partialPaymentStatus === "PAID"
+                      ? "bg-emerald-50 border-emerald-400 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200"
+                      : "bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400"
+                  }`}
+                >
+                  Fully Paid
+                </button>
+              </div>
+            </div>
+
+            {partialPaymentStatus === "PARTIAL_PAID" && (
+              <div className="space-y-3 pt-2 animate-in fade-in duration-200">
+                <Input
+                  label="Amount Received So Far (₹) *"
+                  type="number"
+                  min="0"
+                  value={partialPaidAmount}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/-/g, "");
+                    setPartialPaidAmount(val);
+                    const num = parseFloat(val) || 0;
+                    if (paymentModalBill && num >= paymentModalBill.grandTotal && paymentModalBill.grandTotal > 0) {
+                      setPartialPaymentStatus("PAID");
+                    }
+                  }}
+                  placeholder="e.g. 3000"
+                />
+                {parseFloat(partialPaidAmount) >= 0 && (
+                  <div className="flex justify-between items-center rounded-xl bg-orange-50 dark:bg-orange-950/30 p-3 border border-orange-200 dark:border-orange-800 text-xs font-semibold">
+                    <span className="text-orange-900 dark:text-orange-300">Remaining Balance Due:</span>
+                    <span className="font-mono text-orange-700 dark:text-orange-400 font-extrabold text-sm">
+                      {currencySymbol}{Math.max(0, paymentModalBill.grandTotal - (parseFloat(partialPaidAmount) || 0)).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Dialog>
 
       {/* Screen Invoice Dialog */}
       <Dialog
@@ -668,14 +885,20 @@ function BillsListInner() {
 
             <div className="flex justify-between items-center pt-2">
               <button
-                onClick={() => handleTogglePaymentStatus(viewInvoice.id, viewInvoice.paymentStatus)}
+                onClick={() => handleOpenPaymentModal(viewInvoice)}
                 className={`text-xs font-bold px-3 py-1 rounded-full border cursor-pointer ${
                   viewInvoice.paymentStatus === "PAID" 
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-300" 
-                    : "bg-red-50 text-red-700 border-red-300"
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800" 
+                    : viewInvoice.paymentStatus === "PARTIAL_PAID"
+                    ? "bg-orange-50 text-orange-800 border-orange-300 dark:bg-orange-950/60 dark:text-orange-300 dark:border-orange-800"
+                    : "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"
                 }`}
               >
-                Payment: {viewInvoice.paymentStatus === "PAID" ? "✓ Paid" : "Unpaid (Click to toggle)"}
+                Payment: {viewInvoice.paymentStatus === "PAID"
+                  ? "✓ Paid"
+                  : viewInvoice.paymentStatus === "PARTIAL_PAID"
+                  ? "Partial Paid"
+                  : "Unpaid"}
               </button>
               <div className="text-right">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Grand Total</span>

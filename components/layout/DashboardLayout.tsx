@@ -143,10 +143,6 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       </span>
                     </div>
                   </div>
-                  <div className="text-[8.5px] text-slate-400 dark:text-slate-500 mt-0.5 font-mono truncate" title={orgId || "None"}>
-                    <span className="text-slate-450 dark:text-slate-500 font-sans font-medium">Org ID: </span>
-                    <span className="font-bold text-slate-700 dark:text-slate-300">{orgId || "Not Selected"}</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -253,7 +249,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             <div className="flex items-center gap-3 rounded-lg p-2 bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
               <Show when="signed-in">
                 <div className="flex items-center justify-between w-full">
-                  <UserButton showName />
+                  <UserButton showName appearance={{ elements: { userButtonOuterIdentifier: "text-slate-900 dark:text-slate-100 font-semibold text-xs" } }} />
                 </div>
               </Show>
               <Show when="signed-out">
@@ -302,27 +298,22 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                 </button>
               </div>
 
-              {/* Mobile Role Switcher (Hidden by default, set SHOW_TESTING_MODE_WIDGET = true to enable) */}
-              {SHOW_TESTING_MODE_WIDGET && (
-                <div className="px-4 pt-3 pb-1">
-                  <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                    <button
-                      type="button"
-                      onClick={() => { switchRole("admin"); setMobileMenuOpen(false); }}
-                      className={`py-1.5 rounded-md text-xs font-bold ${isAdmin ? "bg-purple-600 text-white" : "text-slate-600 dark:text-slate-400"}`}
-                    >
-                      Admin Mode
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { switchRole("user"); setMobileMenuOpen(false); }}
-                      className={`py-1.5 rounded-md text-xs font-bold ${!isAdmin ? "bg-blue-600 text-white" : "text-slate-600 dark:text-slate-400"}`}
-                    >
-                      User Mode
-                    </button>
+              {/* Mobile Clerk Organization Switcher & Details */}
+              <div className="px-4 pt-3 pb-1">
+                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-2 space-y-1.5">
+                  <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block px-1">Active Organization</span>
+                  <OrganizationSwitcher hidePersonal appearance={{ elements: { rootBox: "w-full flex justify-between" } }} />
+                  
+                  <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/80 px-1 font-mono text-[9.5px]">
+                    <div className="flex items-center justify-between font-bold text-emerald-600 dark:text-emerald-400">
+                      <span className="truncate max-w-[120px]">{organization?.name || "No Org"}</span>
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${isAdmin ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'}`}>
+                        {user?.role || "loading"}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              )}
+              </div>
 
               <nav className="space-y-1 px-4 py-3">
                 {navigation.map((item) => {
@@ -381,7 +372,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               <div className="flex items-center gap-3 rounded-lg p-2 bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                 <Show when="signed-in">
                   <div className="flex items-center justify-between w-full">
-                    <UserButton showName />
+                    <UserButton showName appearance={{ elements: { userButtonOuterIdentifier: "text-slate-900 dark:text-slate-100 font-semibold text-xs" } }} />
                   </div>
                 </Show>
                 <Show when="signed-out">
@@ -407,33 +398,39 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
       {/* Main Layout Area */}
       <div className="flex flex-1 flex-col md:pl-64">
         {/* Mobile Sticky Header */}
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-slate-200 bg-white/80 backdrop-blur-md px-6 dark:border-slate-800 dark:bg-slate-900/80 md:hidden">
+        <header className="sticky top-0 z-30 flex h-14 sm:h-16 items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-md px-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-md">
               <Tractor className="h-4 w-4" />
             </div>
-            <span className="text-sm font-bold text-slate-900 dark:text-white">Agro Track</span>
+            <div>
+              <span className="text-sm font-bold text-slate-900 dark:text-white leading-none block">Agro Track</span>
+              <span className="text-[9px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400">
+                {isAdmin ? "Admin" : "Member"}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={toggleTheme}
-              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer"
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 cursor-pointer transition-colors"
               title="Toggle Theme Mode"
             >
-              {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5 text-amber-500" />}
+              {theme === "light" ? <Moon className="h-4.5 w-4.5" /> : <Sun className="h-4.5 w-4.5 text-amber-500" />}
             </button>
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
+              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              aria-label="Open mobile menu"
             >
-              <Menu className="h-6 w-6" />
+              <Menu className="h-5.5 w-5.5" />
             </button>
           </div>
         </header>
 
         {/* Content Container */}
-        <main className="flex-1 p-6 md:p-8 animate-in fade-in duration-300">
+        <main className="flex-1 p-3.5 sm:p-5 md:p-6 lg:p-8 animate-in fade-in duration-300">
           {children}
         </main>
       </div>

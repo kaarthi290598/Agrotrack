@@ -180,10 +180,11 @@ export default function SettingsPage() {
           
           <CardContent className="p-6 space-y-6">
             {/* Rates & Invoicing prefix */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 md:grid-cols-3">
               <Input
                 label="Hourly Rate (₹)"
                 type="number"
+                min="0"
                 step="0.01"
                 error={errors.hourlyRate?.message}
                 {...register("hourlyRate", { valueAsNumber: true })}
@@ -234,6 +235,7 @@ export default function SettingsPage() {
               <Input
                 label="Default Tax %"
                 type="number"
+                min="0"
                 step="0.01"
                 error={errors.defaultTax?.message}
                 {...register("defaultTax", { valueAsNumber: true })}
@@ -272,7 +274,7 @@ export default function SettingsPage() {
               type="submit"
               isLoading={isSaving}
               variant="primary"
-              className="px-6 cursor-pointer"
+              className="w-full sm:w-auto px-6 cursor-pointer"
             >
               {!isSaving && <Save className="h-4.5 w-4.5" />}
               Save Configurations
