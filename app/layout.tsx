@@ -7,6 +7,10 @@ import { ToastProvider } from "../components/ui/Toast";
 import { ProtectedLayout } from "../components/auth/ProtectedLayout";
 import { AppShell } from "../components/auth/AppShell";
 import ConvexClientProvider from "../components/ConvexClientProvider";
+import { assertClerkConvexPairing } from "../lib/env";
+
+// Fail the server render if Clerk keys and Convex URL are cross-wired.
+assertClerkConvexPairing("RootLayout");
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

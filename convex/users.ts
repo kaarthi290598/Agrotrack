@@ -13,6 +13,9 @@ const appRoleValidator = v.union(
 
 type AppRole = "ADMIN" | "SUPERVISOR" | "MEMBER";
 
+/** Newly created members are exempt from pruning while Clerk lists catch up. */
+const PRUNE_GRACE_MS = 10 * 60 * 1000;
+
 function normalizeEmail(email: string) {
   return email.toLowerCase().trim();
 }
@@ -276,6 +279,11 @@ export const syncOrgMembers = mutation({
       for (const record of stored) {
         if (clerkUserIds.has(record.clerkUserId)) continue;
         if (record.clerkUserId === caller.clerkUserId) continue;
+        // A freshly added member is often missing from the client's cached
+        // Clerk membership list. Pruning them here would drop their app role,
+        // and the next sync would recreate them as MEMBER.
+        const createdAt = record.createdAt ?? record._creationTime;
+        if (now - createdAt < PRUNE_GRACE_MS) continue;
         await ctx.db.delete(record._id);
         removed += 1;
       }

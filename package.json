@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "convex:dev": "convex dev",
+    "convex:deploy": "convex deploy",
+    "check:env": "node scripts/check-env-pairing.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.22",

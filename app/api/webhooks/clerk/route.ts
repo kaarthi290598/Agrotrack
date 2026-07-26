@@ -2,10 +2,7 @@ import { verifyWebhook } from "@clerk/nextjs/webhooks";
 import { NextRequest } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../../convex/_generated/api";
-
-const convexUrl =
-  process.env.NEXT_PUBLIC_CONVEX_URL ||
-  "https://different-puffin-360.convex.cloud";
+import { assertClerkConvexPairing, getConvexUrl } from "../../../../lib/env";
 
 function memberDisplayName(data: {
   first_name?: string | null;
@@ -33,7 +30,8 @@ export async function POST(req: NextRequest) {
     return new Response("Server misconfigured", { status: 500 });
   }
 
-  const client = new ConvexHttpClient(convexUrl);
+  assertClerkConvexPairing("clerk-webhook");
+  const client = new ConvexHttpClient(getConvexUrl());
 
   try {
     if (

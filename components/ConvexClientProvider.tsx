@@ -3,14 +3,10 @@
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { ReactNode, useCallback, useMemo } from "react";
+import { assertClerkConvexPairing, getConvexUrl } from "../lib/env";
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-if (!convexUrl) {
-  throw new Error(
-    "NEXT_PUBLIC_CONVEX_URL is not set. Use the prod Convex URL on arkit.online (https://grandiose-bulldog-410.convex.cloud)."
-  );
-}
-const convex = new ConvexReactClient(convexUrl);
+assertClerkConvexPairing("ConvexClientProvider");
+const convex = new ConvexReactClient(getConvexUrl());
 
 /**
  * Always use the Clerk "convex" JWT template so custom claims (org_id, org_role)
@@ -30,7 +26,7 @@ function useConvexClerkAuth() {
         });
         if (!token) {
           console.warn(
-            'Clerk getToken({ template: "convex" }) returned null. Ensure the JWT template named "convex" exists.'
+            'Clerk getToken({ template: "convex" }) returned null. Ensure the JWT template named "convex" exists on this Clerk instance.'
           );
         }
         return token;

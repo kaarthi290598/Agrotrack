@@ -102,7 +102,7 @@ export default function MembersPage() {
     }).catch(() => null);
   }, [orgId, user?.id, isAdmin, me?.role, clearPendingInvites]);
 
-  const handleSync = async () => {
+  const handleSync = async ({ allowPrune = true }: { allowPrune?: boolean } = {}) => {
     if (!orgId || !user?.id) return;
 
     const clerkMembers =
@@ -138,7 +138,9 @@ export default function MembersPage() {
     const loadedCount = memberships?.data?.length ?? 0;
     const totalCount = memberships?.count ?? loadedCount;
     const prune =
-      loadedCount >= totalCount && clerkMembers.length === loadedCount;
+      allowPrune &&
+      loadedCount >= totalCount &&
+      clerkMembers.length === loadedCount;
 
     setIsSyncing(true);
     try {
@@ -181,7 +183,9 @@ export default function MembersPage() {
     if (lastAutoSyncKey === syncKey) return;
 
     setLastAutoSyncKey(syncKey);
-    void handleSync();
+    // Never prune automatically: the cached Clerk membership list can lag
+    // behind a just-added member and would delete their app role.
+    void handleSync({ allowPrune: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isAdmin,
@@ -343,7 +347,7 @@ export default function MembersPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={handleSync}
+            onClick={() => handleSync()}
             disabled={isSyncing}
             className="gap-2"
           >
