@@ -16,8 +16,72 @@ type AppRole = "ADMIN" | "SUPERVISOR" | "MEMBER";
 /** Newly created members are exempt from pruning while Clerk lists catch up. */
 const PRUNE_GRACE_MS = 10 * 60 * 1000;
 
+/**
+ * After an intentional remove, block sync/webhook from recreating the row while
+ * Clerk's membership cache still lists the user.
+ */
+const REMOVAL_BLOCK_MS = 10 * 60 * 1000;
+
 function normalizeEmail(email: string) {
   return email.toLowerCase().trim();
+}
+
+async function findRemovalBlock(
+  ctx: { db: any },
+  orgId: string,
+  clerkUserId: string
+) {
+  const rows = await ctx.db
+    .query("removedMemberships")
+    .withIndex("by_org_clerkUser", (q: any) =>
+      q.eq("orgId", orgId).eq("clerkUserId", clerkUserId)
+    )
+    .collect();
+  return rows[0] || null;
+}
+
+async function isRecentlyRemoved(
+  ctx: { db: any },
+  orgId: string,
+  clerkUserId: string,
+  now = Date.now()
+) {
+  const block = await findRemovalBlock(ctx, orgId, clerkUserId);
+  if (!block) return false;
+  if (now - block.removedAt > REMOVAL_BLOCK_MS) {
+    await ctx.db.delete(block._id);
+    return false;
+  }
+  return true;
+}
+
+async function markRemoved(
+  ctx: { db: any },
+  orgId: string,
+  clerkUserId: string
+) {
+  const now = Date.now();
+  const existing = await findRemovalBlock(ctx, orgId, clerkUserId);
+  if (existing) {
+    await ctx.db.patch(existing._id, { removedAt: now });
+    return;
+  }
+  await ctx.db.insert("removedMemberships", {
+    orgId,
+    clerkUserId,
+    removedAt: now,
+  });
+}
+
+async function clearRemovalBlock(
+  ctx: { db: any },
+  orgId: string,
+  clerkUserId: string
+) {
+  const existing = await findRemovalBlock(ctx, orgId, clerkUserId);
+  if (existing) {
+    await ctx.db.delete(existing._id);
+  }
 }
 
 function clerkOrgRoleToAppRole(clerkOrgRole?: string | null): AppRole {
@@ -248,6 +312,10 @@ export const syncOrgMembers = mutation({
         });
         updated += 1;
       } else {
+        // Stale Clerk lists often still include a just-deleted member.
+        if (await isRecentlyRemoved(ctx, args.orgId, member.clerkUserId, now)) {
+          continue;
+        }
         const role = await resolveCreateRole(
           ctx,
           args.orgId,
@@ -323,6 +391,10 @@ export const upsertFromWebhook = mutation({
       return existing._id;
     }
 
+    if (await isRecentlyRemoved(ctx, args.orgId, args.clerkUserId, now)) {
+      return null;
+    }
+
     const role = await resolveCreateRole(
       ctx,
       args.orgId,
@@ -359,6 +431,7 @@ export const removeFromWebhook = mutation({
     if (existing) {
       await ctx.db.delete(existing._id);
     }
+    await markRemoved(ctx, args.orgId, args.clerkUserId);
   },
 });
 
@@ -380,6 +453,7 @@ export const removeAllForClerkUser = mutation({
       .collect();
 
     for (const record of records) {
+      await markRemoved(ctx, record.orgId, args.clerkUserId);
       await ctx.db.delete(record._id);
     }
 
@@ -565,6 +639,9 @@ export const upsertCreatedMember = mutation({
     const email = normalizeEmail(args.email);
     const now = Date.now();
 
+    // Explicit admin add overrides a prior removal block.
+    await clearRemovalBlock(ctx, args.orgId, args.clerkUserId);
+
     const staged = await peekPendingRole(ctx, args.orgId, email);
     const role = args.role || staged || "MEMBER";
 
@@ -672,6 +749,7 @@ export const removeMember = mutation({
   },
   handler: async (ctx, args) => {
     const target = await assertRemovable(ctx, args.orgId, args.userId);
+    await markRemoved(ctx, args.orgId, target.clerkUserId);
     await ctx.db.delete(args.userId);
     return { clerkUserId: target.clerkUserId, email: target.email };
   },

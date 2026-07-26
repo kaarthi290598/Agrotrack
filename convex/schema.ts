@@ -35,6 +35,16 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_org_email", ["orgId", "email"]),
 
+  /**
+   * Blocks sync/webhook from recreating a member right after deliberate removal
+   * (Clerk membership list can lag and would otherwise re-insert the row).
+   */
+  removedMemberships: defineTable({
+    orgId: v.string(),
+    clerkUserId: v.string(),
+    removedAt: v.number(),
+  }).index("by_org_clerkUser", ["orgId", "clerkUserId"]),
+
   customers: defineTable({
     orgId: v.optional(v.string()),
     name: v.string(),

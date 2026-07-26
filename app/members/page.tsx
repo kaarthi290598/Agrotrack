@@ -76,6 +76,8 @@ export default function MembersPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [lastAutoSyncKey, setLastAutoSyncKey] = useState<string | null>(null);
+  /** Pause auto-sync briefly after delete while Clerk cache catches up. */
+  const [suppressAutoSyncUntil, setSuppressAutoSyncUntil] = useState(0);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<UserRole>("MEMBER");
@@ -173,6 +175,7 @@ export default function MembersPage() {
     if (!me || me.role !== "ADMIN") return;
     if (members === undefined) return;
     if (isSyncing) return;
+    if (Date.now() < suppressAutoSyncUntil) return;
 
     const clerkCount = memberships?.data?.length ?? 0;
     if (clerkCount === 0) return;
@@ -197,6 +200,7 @@ export default function MembersPage() {
     members,
     isSyncing,
     lastAutoSyncKey,
+    suppressAutoSyncUntil,
   ]);
 
   useEffect(() => {
@@ -247,6 +251,12 @@ export default function MembersPage() {
         throw new Error(data.error || "Failed to remove member");
       }
 
+      // Clerk's membership hook often still lists the user for a bit; block
+      // auto-sync so it cannot recreate the Convex row from that stale list.
+      setSuppressAutoSyncUntil(Date.now() + 15_000);
+      setLastAutoSyncKey(
+        `${orgId}:removed:${memberToDelete.clerkUserId}:${Date.now()}`
+      );
       memberships?.revalidate?.();
 
       toast({

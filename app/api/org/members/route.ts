@@ -249,6 +249,20 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
+    // Convex first so a removal tombstone is in place before any sync/webhook
+    // can recreate the row from a stale Clerk membership list.
+    try {
+      await convex.mutation(api.users.removeMember, {
+        orgId,
+        userId: convexUserId as Id<"users">,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to remove Convex record";
+      console.error("Convex member removal failed:", error);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+
     const clerk = await clerkClient();
 
     try {
@@ -285,21 +299,10 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    try {
-      await convex.mutation(api.users.removeMember, {
-        orgId,
-        userId: convexUserId as Id<"users">,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to remove Convex record";
-      console.error("Convex member removal failed:", error);
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
-
     return NextResponse.json({
       success: true,
       email: target.email,
+      clerkUserId: target.clerkUserId,
       deletedClerkUser,
     });
   } catch (error) {
