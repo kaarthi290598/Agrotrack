@@ -683,11 +683,26 @@ export const updateRole = mutation({
     role: appRoleValidator,
   },
   handler: async (ctx, args) => {
-    await requireOrgAdmin(ctx, args.orgId);
+    const caller = await requireOrgAdmin(ctx, args.orgId);
 
     const target = await ctx.db.get(args.userId);
     if (!target || target.orgId !== args.orgId) {
       throw new Error("User not found in this organization");
+    }
+
+    const isSelf = target.clerkUserId === caller.clerkUserId;
+
+    // Demoting someone else from ADMIN is blocked when they are the last one.
+    // Admins may change their own role freely (including leaving ADMIN).
+    if (!isSelf && target.role === "ADMIN" && args.role !== "ADMIN") {
+      const members = await ctx.db
+        .query("users")
+        .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+        .collect();
+      const adminCount = members.filter((u) => u.role === "ADMIN").length;
+      if (adminCount <= 1) {
+        throw new Error("Cannot demote the last ADMIN");
+      }
     }
 
     await ctx.db.patch(args.userId, {
