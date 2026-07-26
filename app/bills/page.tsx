@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { billingService } from "../../services/billing.service";
 import { customerService } from "../../services/customer.service";
 import { settingsService } from "../../services/settings.service";
-import { Bill, Customer, Settings } from "../../types";
+import { Bill, Customer, Settings, hasElevatedAccess } from "../../types";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { isBillCreatedByUser } from "../../lib/utils";
 import { useToast } from "../../components/ui/Toast";
@@ -52,7 +52,7 @@ function BillsListInner() {
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasElevatedAccess(user?.role);
   const memberLookup = useOrgMemberLookup();
 
   const [bills, setBills] = useState<Bill[]>([]);
@@ -617,42 +617,51 @@ function BillsListInner() {
 
       {/* Floating Bulk Actions Bar */}
       {selectedIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2.5 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 animate-in slide-in-from-bottom duration-200 text-xs font-semibold max-w-[95vw]">
-          <span className="bg-emerald-600 text-white px-2.5 py-1 rounded-full font-bold">
-            {selectedIds.length} Selected
-          </span>
+        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center justify-between sm:justify-center gap-2 sm:gap-3 bg-slate-900/95 text-white p-2.5 sm:px-4 sm:py-3 rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-md animate-in slide-in-from-bottom duration-200 text-xs font-semibold w-[calc(100%-1.5rem)] sm:w-auto max-w-lg">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="bg-emerald-600 text-white px-2.5 py-1 rounded-full font-bold text-[11px] sm:text-xs">
+              {selectedIds.length} <span className="hidden min-[380px]:inline">Selected</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="text-slate-400 hover:text-white px-1.5 py-1 transition-colors cursor-pointer text-[11px] sm:text-xs hover:underline"
+            >
+              Clear
+            </button>
+          </div>
+
           {isAdmin && (
-            <>
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto sm:ml-0">
               <button
                 type="button"
                 onClick={handleBulkApprove}
-                className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1.5 rounded-xl transition-all active:scale-95 cursor-pointer text-xs font-medium shadow-sm"
+                title="Approve Selected"
               >
-                <Check className="h-3.5 w-3.5" /> Approve
+                <Check className="h-3.5 w-3.5" />
+                <span className="hidden min-[400px]:inline">Approve</span>
               </button>
               <button
                 type="button"
                 onClick={handleBulkReject}
-                className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2.5 sm:px-3 py-1.5 rounded-xl transition-all active:scale-95 cursor-pointer text-xs font-medium shadow-sm"
+                title="Reject Selected"
               >
-                <X className="h-3.5 w-3.5" /> Reject
+                <X className="h-3.5 w-3.5" />
+                <span className="hidden min-[400px]:inline">Reject</span>
               </button>
               <button
                 type="button"
                 onClick={handleBulkDeleteClick}
-                className="flex items-center gap-1 bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-1 bg-red-700 hover:bg-red-600 text-white px-2.5 sm:px-3 py-1.5 rounded-xl transition-all active:scale-95 cursor-pointer text-xs font-medium shadow-sm"
+                title="Delete Selected"
               >
-                <Trash2 className="h-3.5 w-3.5" /> Delete
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden min-[400px]:inline">Delete</span>
               </button>
-            </>
+            </div>
           )}
-          <button
-            type="button"
-            onClick={() => setSelectedIds([])}
-            className="text-slate-400 hover:text-white px-2 py-1 transition-colors cursor-pointer ml-1"
-          >
-            Clear
-          </button>
         </div>
       )}
 

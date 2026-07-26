@@ -12,6 +12,7 @@ import type * as bills from "../bills.js";
 import type * as customers from "../customers.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   customers: typeof customers;
   seed: typeof seed;
   settings: typeof settings;
+  users: typeof users;
 }>;
 
 /**

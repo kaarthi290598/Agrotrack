@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import { billingService } from "../../services/billing.service";
 import { customerService } from "../../services/customer.service";
 import { settingsService } from "../../services/settings.service";
-import { Bill, Settings } from "../../types";
+import { Bill, Settings, canAccessReports, hasElevatedAccess } from "../../types";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
@@ -77,17 +77,17 @@ export default function ReportsPage() {
   const router = useRouter();
   const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const canViewReports = canAccessReports(user?.role);
+  const elevated = hasElevatedAccess(user?.role);
   const { toast } = useToast();
   const memberLookup = useOrgMemberLookup();
 
   useEffect(() => {
-    if (user && !isAdmin) {
-      toast({ type: "error", title: "Access Denied", description: "Reports page is restricted to Admin users." });
+    if (user && !canViewReports) {
+      toast({ type: "error", title: "Access Denied", description: "Reports page is restricted to Admin and Supervisor users." });
       router.replace("/billing");
     }
-  }, [user, isAdmin, router, toast]);
-
+  }, [user, canViewReports, router, toast]);
   const [bills, setBills] = useState<EnrichedBill[]>([]);
   const [filteredBills, setFilteredBills] = useState<EnrichedBill[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -127,7 +127,7 @@ export default function ReportsPage() {
     try {
       const rawBills = await billingService.getAll(orgId || undefined);
       const allBills = rawBills.filter(
-        (b) => isBillCreatedByUser(b, user, isAdmin) && b.status === "APPROVED" && b.paymentStatus === "PAID"
+        (b) => isBillCreatedByUser(b, user, elevated) && b.status === "APPROVED" && b.paymentStatus === "PAID"
       );
       const allCustomers = await customerService.getAll(orgId || undefined);
       const loadedSettings = await settingsService.get(orgId || undefined);
@@ -300,7 +300,7 @@ export default function ReportsPage() {
   const totalHours = filteredBills.reduce((acc, b) => acc + b.hoursUsed, 0);
   const currencySymbol = settings?.currencySymbol || "₹";
 
-  if (!isClerkLoaded || (isLoading && !settings)) {
+  if (!canViewReports || !isClerkLoaded || (isLoading && !settings)) {
     return <ListPageSkeleton withBadge statGridClassName="grid grid-cols-2 lg:grid-cols-4 gap-3" />;
   }
 

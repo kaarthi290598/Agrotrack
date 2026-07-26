@@ -38,9 +38,11 @@ import {
 import { customerService } from "../services/customer.service";
 import { Show, useAuth as useClerkAuth, useOrganization } from "@clerk/nextjs";
 import { useAuth } from "../components/auth/AuthProvider";
+import { canAccessDashboard, hasElevatedAccess } from "../types";
 import { LandingPage } from "../components/landing/LandingPage";
 import { MonthlyRevenueChart } from "../components/dashboard/MonthlyRevenueChart";
 import { StatCard } from "../components/ui/StatCard";
+import { useRouter } from "next/navigation";
 
 interface DashboardData {
   totalCustomers: number;
@@ -55,20 +57,28 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { orgId, orgRole, isLoaded: isClerkLoaded } = useClerkAuth();
   const { organization } = useOrganization();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const canViewDashboard = canAccessDashboard(user?.role);
+  const elevated = hasElevatedAccess(user?.role);
+  const { toast } = useToast();
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast();
+
+  useEffect(() => {
+    if (user && !canViewDashboard) {
+      router.replace("/billing");
+    }
+  }, [user, canViewDashboard, router]);
 
   useEffect(() => {
     // Wait for Clerk so we don't fetch unscoped/all-org data before orgId is ready
-    if (!isClerkLoaded) return;
+    if (!isClerkLoaded || !canViewDashboard) return;
 
     async function loadDashboardData() {
       setIsLoading(true);
@@ -76,7 +86,7 @@ export default function DashboardPage() {
         const stats = await billingService.getStats(
           orgId || undefined,
           user,
-          isAdmin,
+          elevated,
         );
         const settingsData = await settingsService.get(orgId || undefined);
         const custData = await customerService.getAll(orgId || undefined);
@@ -95,9 +105,9 @@ export default function DashboardPage() {
       }
     }
     loadDashboardData();
-  }, [orgId, isClerkLoaded, toast, user, isAdmin]);
+  }, [orgId, isClerkLoaded, toast, user, elevated, canViewDashboard]);
 
-  if (isLoading || !data || !settings) {
+  if (!canViewDashboard || isLoading || !data || !settings) {
     return <DashboardSkeleton />;
   }
 

@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { settingsService } from "../../services/settings.service";
-import { Settings } from "../../types";
+import { Settings, canAccessSettings } from "../../types";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Textarea } from "../../components/ui/Textarea";
@@ -36,15 +36,15 @@ export default function SettingsPage() {
   const router = useRouter();
   const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const canManageSettings = canAccessSettings(user?.role);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (user && !isAdmin) {
+    if (user && !canManageSettings) {
       toast({ type: "error", title: "Access Denied", description: "Settings page is restricted to Admin users." });
       router.replace("/billing");
     }
-  }, [user, isAdmin, router, toast]);
+  }, [user, canManageSettings, router, toast]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<"light" | "dark">("light");
@@ -136,7 +136,7 @@ export default function SettingsPage() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || !canManageSettings) {
     return <SettingsPageSkeleton />;
   }
 

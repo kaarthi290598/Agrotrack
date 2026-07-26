@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { customerService } from "../../services/customer.service";
 import { billingService } from "../../services/billing.service";
-import { Customer, Bill } from "../../types";
+import { Customer, Bill, hasElevatedAccess } from "../../types";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -39,7 +39,7 @@ type CustomerFormValues = z.infer<typeof customerSchema>;
 export default function CustomersPage() {
   const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasElevatedAccess(user?.role);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [allBills, setAllBills] = useState<Bill[]>([]);

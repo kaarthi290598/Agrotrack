@@ -18,6 +18,18 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-emerald-50: #fdf4fc;
+  --color-emerald-100: #fae6f9;
+  --color-emerald-200: #f5ccf3;
+  --color-emerald-300: #eba4e9;
+  --color-emerald-400: #db6edd;
+  --color-emerald-500: #be41bf;
+  --color-emerald-600: #99278a;
+  --color-emerald-700: #7e1d70;
+  --color-emerald-800: #681a5c;
+  --color-emerald-900: #571b4b;
+  --color-emerald-950: #390830;
 }
 
 body {
@@ -50,17 +62,17 @@ body {
 }
 
 .dark .cl-formButtonPrimary {
-  background-color: #059669 !important;
+  background-color: #99278a !important;
   color: #ffffff !important;
 }
 
 .dark .cl-formButtonPrimary:hover {
-  background-color: #047857 !important;
+  background-color: #7e1d70 !important;
 }
 
 .dark .cl-footerActionLink,
 .dark .cl-formFieldAction {
-  color: #34d399 !important;
+  color: #db6edd !important;
 }
 
 .dark .cl-headerTitle,

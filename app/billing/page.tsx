@@ -9,7 +9,7 @@ import * as z from "zod";
 import { customerService } from "../../services/customer.service";
 import { billingService } from "../../services/billing.service";
 import { settingsService } from "../../services/settings.service";
-import { Customer, Bill, AdditionalCharge, Settings } from "../../types";
+import { Customer, Bill, AdditionalCharge, Settings, BillStatus, hasElevatedAccess } from "../../types";
 import { customerSnapshotFromCustomer, resolveBillCustomer } from "../../lib/bill-customer";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
@@ -71,7 +71,7 @@ function BillingFormInner() {
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = hasElevatedAccess(user?.role);
 
   // App Data
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -102,6 +102,8 @@ function BillingFormInner() {
   // Edit Bill mode states
   const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [editingInvoiceNum, setEditingInvoiceNum] = useState<string>("");
+  const [editingBillStatus, setEditingBillStatus] = useState<BillStatus | null>(null);
+  const [isApproving, setIsApproving] = useState(false);
 
   // UI & Location States
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -153,6 +155,7 @@ function BillingFormInner() {
           if (foundBill) {
             setEditingBillId(foundBill.id);
             setEditingInvoiceNum(foundBill.invoiceNumber);
+            setEditingBillStatus(foundBill.status);
             setSelectedCustomerId(foundBill.customerId);
             const foundCust = customerData.find((c) => c.id === foundBill.customerId);
             if (foundCust) {
@@ -434,6 +437,7 @@ function BillingFormInner() {
 
     setEditingBillId(bill.id);
     setEditingInvoiceNum(bill.invoiceNumber);
+    setEditingBillStatus(bill.status);
     setActiveTab("express");
 
     toast({
@@ -511,6 +515,7 @@ function BillingFormInner() {
 
         setEditingBillId(null);
         setEditingInvoiceNum("");
+        setEditingBillStatus(null);
         fetchBills();
         handleResetForm();
         return;
@@ -575,6 +580,53 @@ function BillingFormInner() {
     setPartialPaidAmount("");
     setEditingBillId(null);
     setEditingInvoiceNum("");
+    setEditingBillStatus(null);
+  };
+
+  const handleApproveEditingBill = async () => {
+    if (!editingBillId || !isAdmin) return;
+    setIsApproving(true);
+    try {
+      await billingService.approve(editingBillId);
+      toast({
+        type: "success",
+        title: "Bill Approved",
+        description: `Invoice #${editingInvoiceNum} approved.`,
+      });
+      handleResetForm();
+      router.push("/bills?status=APPROVED");
+    } catch (err: any) {
+      toast({
+        type: "error",
+        title: "Error",
+        description: err.message || "Failed to approve bill.",
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleRejectEditingBill = async () => {
+    if (!editingBillId || !isAdmin) return;
+    setIsApproving(true);
+    try {
+      await billingService.reject(editingBillId);
+      toast({
+        type: "info",
+        title: "Bill Rejected",
+        description: `Invoice #${editingInvoiceNum} rejected.`,
+      });
+      handleResetForm();
+      router.push("/bills?status=REJECTED");
+    } catch (err: any) {
+      toast({
+        type: "error",
+        title: "Error",
+        description: err.message || "Failed to reject bill.",
+      });
+    } finally {
+      setIsApproving(false);
+    }
   };
 
   const handlePrint = async () => {
@@ -744,21 +796,56 @@ function BillingFormInner() {
       </div>
 
       {editingBillId && (
-        <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/40 p-3.5 rounded-xl border border-amber-200/80 dark:border-amber-800/80 text-xs text-amber-900 dark:text-amber-200">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-amber-50 dark:bg-amber-950/40 p-3.5 rounded-xl border border-amber-200/80 dark:border-amber-800/80 text-xs text-amber-900 dark:text-amber-200">
+          <div className="flex items-center gap-2 min-w-0">
             <Edit3 className="h-4 w-4 text-amber-600 shrink-0" />
-            <span>Editing Invoice <strong>#{editingInvoiceNum}</strong>. Make changes below and click <strong>Update Bill</strong>.</span>
+            <span className="min-w-0">
+              Editing Invoice <strong>#{editingInvoiceNum}</strong>
+              {editingBillStatus === "PENDING_APPROVAL" && (
+                <span className="ml-2 inline-flex items-center rounded bg-amber-200/80 dark:bg-amber-900/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                  Pending Approval
+                </span>
+              )}
+              . Make changes below and click <strong>Update Bill</strong>.
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={handleResetForm}
-            className="text-amber-700 dark:text-amber-300 font-bold hover:underline cursor-pointer text-xs"
-          >
-            Cancel Edit
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {isAdmin && editingBillStatus === "PENDING_APPROVAL" && (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="success"
+                  isLoading={isApproving}
+                  onClick={handleApproveEditingBill}
+                  className="h-8 gap-1 cursor-pointer"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Approve
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  isLoading={isApproving}
+                  onClick={handleRejectEditingBill}
+                  className="h-8 gap-1 cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Reject
+                </Button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="text-amber-700 dark:text-amber-300 font-bold hover:underline cursor-pointer text-xs px-1"
+            >
+              Cancel Edit
+            </button>
+          </div>
         </div>
       )}
-
       {activeTab === "express" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column (2 Cols) - Fast Form */}
@@ -1097,6 +1184,30 @@ function BillingFormInner() {
 
                 {/* Primary Action Buttons (Desktop View) */}
                 <div className="hidden md:flex flex-col gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  {isAdmin && editingBillId && editingBillStatus === "PENDING_APPROVAL" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant="success"
+                        isLoading={isApproving}
+                        onClick={handleApproveEditingBill}
+                        className="w-full h-10 text-sm font-bold cursor-pointer"
+                      >
+                        <Check className="h-4 w-4" />
+                        Approve Bill
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        isLoading={isApproving}
+                        onClick={handleRejectEditingBill}
+                        className="w-full h-10 text-sm font-bold cursor-pointer"
+                      >
+                        <X className="h-4 w-4" />
+                        Reject
+                      </Button>
+                    </div>
+                  )}
                   {endTime && endTime.trim() !== "" ? (
                     <Button
                       type="button"
@@ -1230,7 +1341,34 @@ function BillingFormInner() {
 
       {/* Floating Sticky Mobile Submit Action Bar */}
       {activeTab === "express" && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-3.5 flex items-center justify-between gap-3 shadow-2xl md:hidden">
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-3.5 flex flex-col gap-2 shadow-2xl md:hidden">
+          {isAdmin && editingBillId && editingBillStatus === "PENDING_APPROVAL" && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="success"
+                size="sm"
+                isLoading={isApproving}
+                onClick={handleApproveEditingBill}
+                className="flex-1 h-9 text-xs font-bold cursor-pointer"
+              >
+                <Check className="h-3.5 w-3.5" />
+                Approve
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                isLoading={isApproving}
+                onClick={handleRejectEditingBill}
+                className="flex-1 h-9 text-xs font-bold cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+                Reject
+              </Button>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
           <div>
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
               {endTime && endTime.trim() !== "" ? "Grand Total" : "Mode"}
@@ -1282,9 +1420,9 @@ function BillingFormInner() {
                 : "Save Bill"}
             </Button>
           )}
+          </div>
         </div>
       )}
-
       {/* Quick Add Customer Dialog */}
       <Dialog
         isOpen={isQuickAddOpen}

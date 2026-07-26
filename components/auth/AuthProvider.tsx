@@ -1,7 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 import { useUser, useAuth as useClerkAuth } from "@clerk/nextjs";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { UserProfile, UserRole } from "../../types";
 import { getClerkDisplayName } from "../../lib/clerk-user";
 
@@ -20,39 +22,79 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   orgRole: null,
   signOut: () => {},
-  switchRole: () => {}
+  switchRole: () => {},
 });
 
-const ROLE_STORAGE_KEY = "farmer_tracker_active_role";
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const {
+    isLoaded: clerkLoaded,
+    isSignedIn: clerkSignedIn,
+    user: clerkUser,
+  } = useUser();
+  const { orgId, orgRole } = useClerkAuth();
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn, user: clerkUser } = useUser();
-  const { orgRole } = useClerkAuth();
+  const ensureCurrentUser = useMutation(api.users.ensureCurrentUser);
+  const convexUser = useQuery(
+    api.users.getCurrentUser,
+    clerkSignedIn && clerkUser && orgId
+      ? { orgId, clerkUserId: clerkUser.id }
+      : "skip"
+  );
 
-  // Determine actual role from Clerk Organization Role
-  // org:admin -> "admin"
-  // org:member -> "user"
-  // If no org selected, default to "user" to be safe, or "admin" if you want solo users to be admins.
-  // We'll default to "user" if they are explicitly org:member, and "admin" if explicitly org:admin.
-  // If undefined (personal account), we can default to "admin" so solo users can use the app, 
-  // but if they are in an org and are a member, they MUST be "user".
-  let effectiveRole: UserRole = "admin"; // Default for personal accounts
-  
-  if (orgRole) {
-    // If they are in an organization, STRICTLY use their org role
-    effectiveRole = orgRole === "org:admin" ? "admin" : "user";
+  // Keep Convex user record in sync whenever the user is in an organization
+  useEffect(() => {
+    if (!clerkSignedIn || !clerkUser || !orgId) return;
+
+    const email = clerkUser.primaryEmailAddress?.emailAddress;
+    if (!email) return;
+
+    void ensureCurrentUser({
+      orgId,
+      clerkUserId: clerkUser.id,
+      email,
+      fullName: getClerkDisplayName(clerkUser),
+      imageUrl: clerkUser.imageUrl,
+      clerkOrgRole: orgRole || undefined,
+    }).catch((err) => {
+      console.error("Failed to sync Convex user:", err);
+    });
+  }, [
+    clerkSignedIn,
+    clerkUser,
+    orgId,
+    orgRole,
+    ensureCurrentUser,
+  ]);
+
+  // Convex is the source of truth for application roles.
+  // While syncing, bootstrap from Clerk org role so creators aren't locked out.
+  let effectiveRole: UserRole | null = null;
+  if (convexUser?.role) {
+    effectiveRole = convexUser.role;
+  } else if (orgId && orgRole) {
+    effectiveRole = orgRole === "org:admin" ? "ADMIN" : "MEMBER";
+  } else if (clerkSignedIn && !orgId) {
+    // Personal/no-org session — keep previous solo-admin behavior
+    effectiveRole = "ADMIN";
   }
 
-  const user: UserProfile | null = clerkSignedIn && clerkUser ? {
-    id: clerkUser.id,
-    fullName: getClerkDisplayName(clerkUser),
-    primaryEmailAddress: clerkUser.primaryEmailAddress?.emailAddress || "",
-    role: effectiveRole
-  } : null;
+  const user: UserProfile | null =
+    clerkSignedIn && clerkUser && effectiveRole
+      ? {
+          id: clerkUser.id,
+          fullName: getClerkDisplayName(clerkUser),
+          primaryEmailAddress:
+            clerkUser.primaryEmailAddress?.emailAddress || "",
+          role: effectiveRole,
+        }
+      : null;
 
-  const switchRole = (role: UserRole) => {
-    // No-op since we removed the manual override
-    console.log("Manual role switching disabled. Using Clerk roles.");
+  const switchRole = (_role: UserRole) => {
+    console.log(
+      "Manual role switching disabled. Application roles are managed in Convex."
+    );
   };
 
   const signOut = () => {
@@ -60,14 +102,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      isSignedIn: !!clerkSignedIn, 
-      isLoaded: clerkLoaded, 
-      user, 
-      orgRole: orgRole || null,
-      signOut, 
-      switchRole 
-    }}>
+    <AuthContext.Provider
+      value={{
+        isSignedIn: !!clerkSignedIn,
+        isLoaded: clerkLoaded,
+        user,
+        orgRole: orgRole || null,
+        signOut,
+        switchRole,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

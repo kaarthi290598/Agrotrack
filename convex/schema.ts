@@ -1,7 +1,40 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const appRole = v.union(
+  v.literal("ADMIN"),
+  v.literal("SUPERVISOR"),
+  v.literal("MEMBER")
+);
+
 export default defineSchema({
+  users: defineTable({
+    clerkUserId: v.string(),
+    orgId: v.string(),
+    email: v.string(),
+    fullName: v.string(),
+    imageUrl: v.optional(v.string()),
+    role: appRole,
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_clerkUser", ["clerkUserId"])
+    .index("by_org_clerkUser", ["orgId", "clerkUserId"]),
+
+  /**
+   * Pending org invitations with the intended Convex application role.
+   * Consumed when the invitee joins and their Convex user record is created.
+   */
+  pendingInvites: defineTable({
+    orgId: v.string(),
+    email: v.string(),
+    role: appRole,
+    invitedByClerkUserId: v.string(),
+    clerkInvitationId: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_org_email", ["orgId", "email"]),
+
   customers: defineTable({
     orgId: v.optional(v.string()),
     name: v.string(),

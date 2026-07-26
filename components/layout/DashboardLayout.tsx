@@ -21,7 +21,13 @@ import {
   UserCheck
 } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
-import { UserRole } from "../../types";
+import {
+  canAccessPath,
+  getAllowedPaths,
+  getDefaultPath,
+  hasElevatedAccess,
+  isAppAdmin,
+} from "../../types";
 import { Show, SignInButton, SignUpButton, UserButton, OrganizationSwitcher, useAuth as useClerkAuth, useOrganization } from "@clerk/nextjs";
 
 // Toggle to show/hide testing mode widget in sidebar
@@ -38,6 +44,7 @@ const allNavigation: SidebarItem[] = [
   { name: "New Bill", href: "/billing", icon: Receipt },
   { name: "Bills List", href: "/bills", icon: FileText },
   { name: "Customers", href: "/customers", icon: Users },
+  { name: "Members", href: "/members", icon: UserCheck },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Settings", href: "/settings", icon: SettingsIcon }
 ];
@@ -51,35 +58,31 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const { organization } = useOrganization();
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
-  const isAdmin = user?.role === "admin";
+  const role = user?.role;
+  const isAdmin = isAppAdmin(role);
+  const elevated = hasElevatedAccess(role);
+  const allowedPaths = getAllowedPaths(role);
 
-  // Filter navigation for Member (User) vs Admin
-  // Member sees only: Dashboard (/), New Bill (/billing), Bills List (/bills), & Customers (/customers)
-  // Reports, & Settings are strictly for Admin
-  const navigation = allNavigation.filter((item) => {
-    if (!isAdmin) {
-      // Members see Dashboard, New Bill, Bills List, Customers
-      return item.href === "/" || item.href === "/billing" || item.href === "/bills" || item.href === "/customers";
-    }
-    return true;
-  }).map((item) => {
-    // Dynamic renaming for the Bills route
-    if (item.href === "/bills") {
-      return { ...item, name: isAdmin ? "Bills & Approvals" : "Bills List", icon: isAdmin ? ShieldCheck : FileText };
-    }
-    return item;
-  });
-
-  // Guard routes for regular users (Members)
-  useEffect(() => {
-    if (user && !isAdmin) {
-      const allowedPaths = ["/", "/billing", "/bills", "/customers"];
-      if (!allowedPaths.includes(pathname)) {
-        router.replace("/billing");
+  const navigation = allNavigation
+    .filter((item) => allowedPaths.includes(item.href))
+    .map((item) => {
+      if (item.href === "/bills") {
+        return {
+          ...item,
+          name: elevated ? "Bills & Approvals" : "Bills List",
+          icon: elevated ? ShieldCheck : FileText,
+        };
       }
-    }
-  }, [user, isAdmin, pathname, router]);
+      return item;
+    });
 
+  // Enforce Convex role permissions on routes
+  useEffect(() => {
+    if (!user) return;
+    if (!canAccessPath(role, pathname)) {
+      router.replace(getDefaultPath(role));
+    }
+  }, [user, role, pathname, router]);
   useEffect(() => {
     if (typeof window !== "undefined") {
       const isDark = document.documentElement.classList.contains("dark");
@@ -138,7 +141,13 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                           {orgRole}
                         </span>
                       )}
-                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${isAdmin ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'}`}>
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${
+                        role === "ADMIN"
+                          ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                          : role === "SUPERVISOR"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                      }`}>
                         {user?.role || "loading"}
                       </span>
                     </div>
@@ -164,7 +173,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                   <div className="grid grid-cols-2 gap-1 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200/60 dark:border-slate-800">
                     <button
                       type="button"
-                      onClick={() => switchRole("admin")}
+                      onClick={() => switchRole("ADMIN")}
                       className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                         isAdmin
                           ? "bg-purple-600 text-white shadow-xs"
@@ -176,7 +185,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                     </button>
                     <button
                       type="button"
-                      onClick={() => switchRole("user")}
+                      onClick={() => switchRole("MEMBER")}
                       className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                         !isAdmin
                           ? "bg-blue-600 text-white shadow-xs"
@@ -184,7 +193,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       }`}
                     >
                       <UserCheck className="h-3.5 w-3.5" />
-                      <span>User</span>
+                      <span>Member</span>
                     </button>
                   </div>
                 </div>
@@ -307,7 +316,13 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                   <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/80 px-1 font-mono text-[9.5px]">
                     <div className="flex items-center justify-between font-bold text-emerald-600 dark:text-emerald-400">
                       <span className="truncate max-w-[120px]">{organization?.name || "No Org"}</span>
-                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${isAdmin ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'}`}>
+                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${
+                        role === "ADMIN"
+                          ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
+                          : role === "SUPERVISOR"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                      }`}>
                         {user?.role || "loading"}
                       </span>
                     </div>
@@ -406,7 +421,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             <div>
               <span className="text-sm font-bold text-slate-900 dark:text-white leading-none block">Agro Track</span>
               <span className="text-[9px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400">
-                {isAdmin ? "Admin" : "Member"}
+                {user?.role || "Member"}
               </span>
             </div>
           </div>

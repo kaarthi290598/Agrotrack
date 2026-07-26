@@ -9,7 +9,7 @@ const sharedVariables = {
 export const clerkLightAppearance = {
   variables: {
     ...sharedVariables,
-    colorPrimary: "#059669",
+    colorPrimary: "#99278a",
     colorPrimaryForeground: "#ffffff",
     colorBackground: "#ffffff",
     colorForeground: "#0f172a",
@@ -34,7 +34,7 @@ export const clerkDarkAppearance = {
   theme: dark,
   variables: {
     ...sharedVariables,
-    colorPrimary: "#10b981",
+    colorPrimary: "#be41bf",
     colorPrimaryForeground: "#ffffff",
     colorBackground: "#0f172a",
     colorForeground: "#f8fafc",

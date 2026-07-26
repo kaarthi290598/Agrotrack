@@ -107,8 +107,8 @@ export function MonthlyRevenueChart({
             >
               <defs>
                 <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity="1" />
-                  <stop offset="100%" stopColor="#059669" stopOpacity="0.85" />
+                  <stop offset="0%" stopColor="#be41bf" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#99278a" stopOpacity="0.85" />
                 </linearGradient>
               </defs>
 

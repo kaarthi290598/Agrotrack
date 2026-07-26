@@ -1,0 +1,677 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth as useClerkAuth, useOrganization } from "@clerk/nextjs";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../components/auth/AuthProvider";
+import { UserRole, canManageMembers } from "../../types";
+import { useToast } from "../../components/ui/Toast";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
+import { Select } from "../../components/ui/Select";
+import { Dialog } from "../../components/ui/Dialog";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/Card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/Table";
+import { ListPageSkeleton } from "../../components/skeletons/PageSkeletons";
+import { formatClerkMemberName, getInitials } from "../../lib/clerk-user";
+import { Plus, RefreshCw, Trash2, Users } from "lucide-react";
+
+const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
+  { value: "ADMIN", label: "Admin" },
+  { value: "SUPERVISOR", label: "Supervisor" },
+  { value: "MEMBER", label: "Member" },
+];
+
+type MemberRow = {
+  _id: Id<"users">;
+  clerkUserId: string;
+  email: string;
+  fullName: string;
+  imageUrl?: string;
+  role: UserRole;
+};
+
+export default function MembersPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
+  const { user } = useAuth();
+  const isAdmin = canManageMembers(user?.role);
+  const { memberships } = useOrganization({
+    memberships: {
+      pageSize: 100,
+      keepPreviousData: true,
+    },
+  });
+
+  const syncOrgMembers = useMutation(api.users.syncOrgMembers);
+  const updateRole = useMutation(api.users.updateRole);
+  const createPendingInvite = useMutation(api.users.createPendingInvite);
+  const cancelPendingInvite = useMutation(api.users.cancelPendingInvite);
+
+  const me = useQuery(
+    api.users.getCurrentUser,
+    orgId && user?.id ? { orgId, clerkUserId: user.id } : "skip"
+  );
+  const members = useQuery(
+    api.users.listByOrg,
+    orgId && user?.id ? { orgId, callerClerkUserId: user.id } : "skip"
+  );
+  const pendingInvites = useQuery(
+    api.users.listPendingInvites,
+    orgId && user?.id ? { orgId, callerClerkUserId: user.id } : "skip"
+  );
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [hasAutoSynced, setHasAutoSynced] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<UserRole>("MEMBER");
+  const [isInviting, setIsInviting] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState<MemberRow | null>(null);
+  const [inviteToDelete, setInviteToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (user && !isAdmin) {
+      toast({
+        type: "error",
+        title: "Access Denied",
+        description: "Member role management is restricted to Admin users.",
+      });
+      router.replace("/billing");
+    }
+  }, [user, isAdmin, router, toast]);
+
+  const handleSync = async () => {
+    if (!orgId || !user?.id) return;
+
+    const clerkMembers =
+      memberships?.data
+        ?.map((membership) => {
+          const data = membership.publicUserData;
+          if (!data?.userId) return null;
+          return {
+            clerkUserId: data.userId,
+            email: data.identifier || "",
+            fullName: formatClerkMemberName(
+              data.firstName,
+              data.lastName,
+              data.identifier
+            ),
+            imageUrl: data.imageUrl || undefined,
+            clerkOrgRole: membership.role,
+          };
+        })
+        .filter((m): m is NonNullable<typeof m> => !!m && !!m.email) || [];
+
+    if (clerkMembers.length === 0) {
+      toast({
+        type: "error",
+        title: "No members found",
+        description: "Could not load organization members from Clerk yet.",
+      });
+      return;
+    }
+
+    // Only prune when the loaded page holds every Clerk membership, otherwise
+    // members beyond the first page would be deleted from Convex.
+    const loadedCount = memberships?.data?.length ?? 0;
+    const totalCount = memberships?.count ?? loadedCount;
+    const prune =
+      loadedCount >= totalCount && clerkMembers.length === loadedCount;
+
+    setIsSyncing(true);
+    try {
+      const result = await syncOrgMembers({
+        orgId,
+        callerClerkUserId: user.id,
+        prune,
+        members: clerkMembers,
+      });
+      toast({
+        type: "success",
+        title: "Members synced",
+        description: `Created ${result.created}, updated ${result.updated}${
+          result.removed ? `, removed ${result.removed}` : ""
+        }.`,
+      });
+    } catch (error) {
+      toast({
+        type: "error",
+        title: "Sync failed",
+        description:
+          error instanceof Error ? error.message : "Could not sync members.",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (hasAutoSynced) return;
+    if (!isAdmin || !orgId || !user?.id) return;
+    if (!me || me.role !== "ADMIN") return;
+    if (members === undefined) return;
+
+    const clerkCount = memberships?.data?.length ?? 0;
+    if (clerkCount === 0) return;
+    if (members.length === clerkCount) return;
+
+    setHasAutoSynced(true);
+    void handleSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    hasAutoSynced,
+    isAdmin,
+    orgId,
+    user?.id,
+    me?._id,
+    me?.role,
+    memberships?.data?.length,
+    members,
+  ]);
+
+  useEffect(() => {
+    setHasAutoSynced(false);
+  }, [orgId]);
+
+  const handleRoleChange = async (userId: Id<"users">, role: UserRole) => {
+    if (!orgId || !user?.id) return;
+
+    setUpdatingUserId(userId);
+    try {
+      await updateRole({
+        orgId,
+        userId,
+        role,
+        callerClerkUserId: user.id,
+      });
+      toast({
+        type: "success",
+        title: "Role updated",
+        description: `Application role set to ${role}.`,
+      });
+    } catch (error) {
+      toast({
+        type: "error",
+        title: "Update failed",
+        description:
+          error instanceof Error ? error.message : "Could not update role.",
+      });
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
+  const handleDeleteMember = async () => {
+    if (!orgId || !user?.id || !memberToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      // Removal happens server-side: app ADMINs are Clerk `org:member` and cannot
+      // remove Clerk memberships from the browser.
+      const res = await fetch("/api/org/members", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgId, userId: memberToDelete._id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to remove member");
+      }
+
+      memberships?.revalidate?.();
+
+      toast({
+        type: "success",
+        title: "Member removed",
+        description: `${memberToDelete.fullName} was removed from Clerk and the app.`,
+      });
+      setMemberToDelete(null);
+    } catch (error) {
+      toast({
+        type: "error",
+        title: "Remove failed",
+        description:
+          error instanceof Error ? error.message : "Could not remove member.",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteInvite = async () => {
+    if (!orgId || !user?.id || !inviteToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch("/api/org/invite", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgId, email: inviteToDelete }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to revoke invitation");
+      }
+
+      await cancelPendingInvite({
+        orgId,
+        email: inviteToDelete,
+        callerClerkUserId: user.id,
+      });
+      toast({
+        type: "success",
+        title: "Invite cancelled",
+        description: `Pending invite for ${inviteToDelete} was removed.`,
+      });
+      setInviteToDelete(null);
+    } catch (error) {
+      toast({
+        type: "error",
+        title: "Cancel failed",
+        description:
+          error instanceof Error ? error.message : "Could not cancel invite.",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const openAddMember = () => {
+    setInviteEmail("");
+    setInviteRole("MEMBER");
+    setIsAddOpen(true);
+  };
+
+  const handleAddMember = async () => {
+    if (!orgId || !user?.id) return;
+
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email.includes("@")) {
+      toast({
+        type: "error",
+        title: "Invalid email",
+        description: "Enter a valid email address.",
+      });
+      return;
+    }
+
+    setIsInviting(true);
+    try {
+      await createPendingInvite({
+        orgId,
+        email,
+        role: inviteRole,
+        callerClerkUserId: user.id,
+      });
+
+      let redirectUrl = "";
+      try {
+        const res = await fetch("/api/org/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, orgId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to create invitation");
+        }
+        redirectUrl = data.redirectUrl || "";
+
+        await createPendingInvite({
+          orgId,
+          email,
+          role: inviteRole,
+          callerClerkUserId: user.id,
+          clerkInvitationId: data.id,
+        });
+      } catch (inviteError) {
+        await cancelPendingInvite({
+          orgId,
+          email,
+          callerClerkUserId: user.id,
+        });
+        throw inviteError;
+      }
+
+      toast({
+        type: "success",
+        title: "Invitation sent",
+        description: `${email} invited as ${inviteRole}${
+          redirectUrl ? `. Accept link goes to ${redirectUrl}` : ""
+        }.`,
+      });
+      setIsAddOpen(false);
+      setInviteEmail("");
+      setInviteRole("MEMBER");
+    } catch (error) {
+      toast({
+        type: "error",
+        title: "Invite failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not invite this member.",
+      });
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  if (!isClerkLoaded || !user || !isAdmin || members === undefined) {
+    return <ListPageSkeleton />;
+  }
+
+  return (
+    <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Users className="h-6 w-6 text-emerald-600" />
+            Members
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Invite members and manage their application roles.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="gap-2"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
+            />
+            Sync
+          </Button>
+          <Button type="button" onClick={openAddMember} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Member
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Organization members</CardTitle>
+          <CardDescription>
+            Application roles are stored in Convex. New invites always use Clerk{" "}
+            <code className="text-xs">org:member</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {members.length === 0 ? (
+            <div className="px-6 py-10 text-center space-y-3">
+              <p className="text-sm text-slate-500">
+                No members yet. Invite someone to get started.
+              </p>
+              <Button type="button" onClick={openAddMember} className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Member
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Member</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead className="w-45">App role</TableHead>
+                    <TableHead className="w-16 text-right"> </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {members.map((member) => (
+                    <TableRow key={member._id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          {member.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={member.imageUrl}
+                              alt=""
+                              className="h-8 w-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center text-xs font-bold">
+                              {getInitials(member.fullName)}
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-medium text-slate-900 dark:text-slate-100">
+                              {member.fullName}
+                            </div>
+                            {member.clerkUserId === user.id && (
+                              <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                                You
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-slate-500 dark:text-slate-400">
+                        {member.email}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          options={ROLE_OPTIONS}
+                          value={member.role}
+                          disabled={updatingUserId === member._id}
+                          onChange={(e) =>
+                            handleRoleChange(
+                              member._id,
+                              e.target.value as UserRole
+                            )
+                          }
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <button
+                          type="button"
+                          title={
+                            member.clerkUserId === user.id
+                              ? "You cannot remove yourself"
+                              : "Remove member"
+                          }
+                          disabled={member.clerkUserId === user.id}
+                          onClick={() =>
+                            setMemberToDelete({
+                              _id: member._id,
+                              clerkUserId: member.clerkUserId,
+                              email: member.email,
+                              fullName: member.fullName,
+                              imageUrl: member.imageUrl,
+                              role: member.role,
+                            })
+                          }
+                          className="inline-flex p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {(pendingInvites?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pending invites</CardTitle>
+            <CardDescription>
+              These roles apply when the invitee accepts and joins.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Email</TableHead>
+                    <TableHead>App role</TableHead>
+                    <TableHead className="w-16 text-right"> </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingInvites!.map((invite) => (
+                    <TableRow key={invite._id}>
+                      <TableCell>{invite.email}</TableCell>
+                      <TableCell>
+                        <span className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                          {invite.role}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <button
+                          type="button"
+                          title="Cancel invite"
+                          onClick={() => setInviteToDelete(invite.email)}
+                          className="inline-flex p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog
+        isOpen={isAddOpen}
+        onClose={() => !isInviting && setIsAddOpen(false)}
+        title="Add Member"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={isInviting}
+              onClick={() => setIsAddOpen(false)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              isLoading={isInviting}
+              onClick={handleAddMember}
+              className="cursor-pointer"
+            >
+              Send Invite
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Email address"
+            type="email"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="member@example.com"
+            autoFocus
+          />
+          <Select
+            label="Application role"
+            options={ROLE_OPTIONS}
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value as UserRole)}
+          />
+        </div>
+      </Dialog>
+
+      <Dialog
+        isOpen={!!memberToDelete}
+        onClose={() => !isDeleting && setMemberToDelete(null)}
+        title="Remove member"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => setMemberToDelete(null)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              isLoading={isDeleting}
+              onClick={handleDeleteMember}
+              className="cursor-pointer"
+            >
+              Remove
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Remove <strong>{memberToDelete?.fullName}</strong> (
+          {memberToDelete?.email}) from this organization? Their Convex role
+          record will be deleted and they will lose org access.
+        </p>
+      </Dialog>
+
+      <Dialog
+        isOpen={!!inviteToDelete}
+        onClose={() => !isDeleting && setInviteToDelete(null)}
+        title="Cancel invite"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => setInviteToDelete(null)}
+              className="cursor-pointer"
+            >
+              Keep
+            </Button>
+            <Button
+              variant="destructive"
+              isLoading={isDeleting}
+              onClick={handleDeleteInvite}
+              className="cursor-pointer"
+            >
+              Cancel invite
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Cancel the pending invite for <strong>{inviteToDelete}</strong>? The
+          stored application role will be discarded.
+        </p>
+      </Dialog>
+    </div>
+  );
+}
