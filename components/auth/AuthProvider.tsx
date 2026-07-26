@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect } from "react";
 import { useUser, useAuth as useClerkAuth } from "@clerk/nextjs";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { UserProfile, UserRole } from "../../types";
 import { getClerkDisplayName } from "../../lib/clerk-user";
@@ -37,6 +37,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     user: clerkUser,
   } = useUser();
   const { orgId, orgRole, getToken } = useClerkAuth();
+  const { isAuthenticated: convexAuthenticated, isLoading: convexAuthLoading } =
+    useConvexAuth();
 
   // Register JWT getter during render so services don't race ahead of useEffect
   if (clerkSignedIn) {
@@ -50,11 +52,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const ensureCurrentUser = useMutation(api.users.ensureCurrentUser);
   const convexUser = useQuery(
     api.users.getCurrentUser,
-    clerkSignedIn && clerkUser && orgId ? {} : "skip"
+    clerkSignedIn && clerkUser && orgId && convexAuthenticated ? {} : "skip"
   );
 
   useEffect(() => {
-    if (!clerkSignedIn || !clerkUser || !orgId) return;
+    // Wait until Convex has the Clerk JWT attached; otherwise mutations
+    // see ctx.auth.getUserIdentity() === null → "Unauthenticated".
+    if (
+      !clerkSignedIn ||
+      !clerkUser ||
+      !orgId ||
+      convexAuthLoading ||
+      !convexAuthenticated
+    ) {
+      return;
+    }
 
     const email = clerkUser.primaryEmailAddress?.emailAddress;
     if (!email) return;
@@ -69,13 +81,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }).catch((err) => {
       console.error("Failed to sync Convex user:", err);
     });
-  }, [clerkSignedIn, clerkUser, orgId, orgRole, ensureCurrentUser]);
+  }, [
+    clerkSignedIn,
+    clerkUser,
+    orgId,
+    orgRole,
+    convexAuthLoading,
+    convexAuthenticated,
+    ensureCurrentUser,
+  ]);
 
   const waitingOnConvexRole =
     !!clerkSignedIn &&
     !!clerkUser &&
     !!orgId &&
-    (convexUser === undefined ||
+    (convexAuthLoading ||
+      !convexAuthenticated ||
+      convexUser === undefined ||
       (convexUser === null && orgRole !== "org:admin"));
 
   let effectiveRole: UserRole | null = null;

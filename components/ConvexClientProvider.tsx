@@ -21,11 +21,18 @@ function useConvexClerkAuth() {
   const fetchAccessToken = useCallback(
     async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
       try {
-        return await getToken({
+        const token = await getToken({
           template: "convex",
           skipCache: forceRefreshToken,
         });
-      } catch {
+        if (!token) {
+          console.warn(
+            'Clerk getToken({ template: "convex" }) returned null. Ensure the JWT template named "convex" exists.'
+          );
+        }
+        return token;
+      } catch (err) {
+        console.error("Failed to fetch Convex JWT from Clerk:", err);
         return null;
       }
     },
