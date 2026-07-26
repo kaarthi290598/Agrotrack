@@ -23,8 +23,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agro Track - Billing & Session Management",
-  description: "Agro Track: Track machine rental sessions, manage farmer details, and generate professional invoices.",
+  title: "Arkit Innovatives pvt ltd",
+  description: "Arkit Innovatives pvt ltd application",
+  applicationName: "Arkit Innovatives",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

@@ -191,7 +191,7 @@ export default function SettingsPage() {
               <Input
                 label="Business Name"
                 type="text"
-                placeholder="e.g. AgroTech Services"
+                placeholder="e.g. Arkit Innovatives"
                 error={errors.businessName?.message}
                 {...register("businessName")}
               />

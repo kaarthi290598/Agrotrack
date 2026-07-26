@@ -48,6 +48,7 @@ function purgeLegacyMockIfNeeded() {
       const settings = JSON.parse(settingsRaw) as Settings;
       if (
         settings.businessName === "Agro Track Machinery Services" ||
+        settings.businessName === "Arkit Innovatives Services" ||
         String(settings.businessName || "").includes("(Org ")
       ) {
         localStorage.setItem(

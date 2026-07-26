@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { 
-  Tractor, 
+  Building2, 
   LayoutDashboard, 
   Receipt, 
   FileText,
@@ -131,11 +131,11 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
             {/* Logo Header */}
             <div className="flex h-16 items-center gap-2.5 border-b border-slate-100 px-6 dark:border-slate-800">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-md shadow-emerald-600/10">
-                <Tractor className="h-5 w-5" />
+                <Building2 className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-slate-900 dark:text-white leading-none">Agro Track</h1>
-                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Tracker & Billing</span>
+                <h1 className="text-base font-bold text-slate-900 dark:text-white leading-none">Arkit Innovatives</h1>
+                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Pvt Ltd</span>
               </div>
             </div>
 
@@ -309,9 +309,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               <div className="flex h-16 items-center justify-between border-b border-slate-100 px-6 dark:border-slate-800">
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-md">
-                    <Tractor className="h-4 w-4" />
+                    <Building2 className="h-4 w-4" />
                   </div>
-                  <span className="text-sm font-bold text-slate-900 dark:text-white">Agro Track</span>
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">Arkit Innovatives</span>
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
@@ -430,10 +430,10 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
         <header className="sticky top-0 z-30 flex h-14 sm:h-16 items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-md px-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/90 md:hidden">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-md">
-              <Tractor className="h-4 w-4" />
+              <Building2 className="h-4 w-4" />
             </div>
             <div>
-              <span className="text-sm font-bold text-slate-900 dark:text-white leading-none block">Agro Track</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white leading-none block">Arkit Innovatives</span>
               <span className="text-[9px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400">
                 {user?.role || "Member"}
               </span>

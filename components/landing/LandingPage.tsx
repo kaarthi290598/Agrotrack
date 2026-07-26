@@ -1,129 +1,97 @@
 "use client";
 
 import React from "react";
-import { RedirectToTasks, SignInButton, SignUpButton } from "@clerk/nextjs";
-import { Tractor, ShieldCheck, Clock, Receipt, IndianRupee, ArrowRight, CheckCircle2, Lock } from "lucide-react";
+import { SignIn, SignInButton, SignOutButton, Show } from "@clerk/nextjs";
+import { Clock, Receipt, BarChart3 } from "lucide-react";
 
 export const LandingPage: React.FC = () => {
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white">
-      {/* Pending sessions (e.g. choose-organization) are treated as signed-out;
-          send them to the task page instead of leaving them stuck on the landing. */}
-      <RedirectToTasks />
-      {/* Standalone Top Navbar */}
-      <header className="w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-          {/* Logo Header */}
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20">
-              <Tractor className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">Agro Track</h1>
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Machinery & Billing</span>
-            </div>
-          </div>
+    <div className="min-h-screen min-h-[100dvh] w-full flex flex-col lg:flex-row bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-emerald-500 selection:text-white transition-colors duration-200">
+      {/* LEFT SIDE: 50% Width Panel on Desktop / Full Viewport Height on Mobile */}
+      <div className="w-full lg:w-1/2 min-h-screen min-h-[100dvh] flex flex-col justify-center items-start px-5 py-8 sm:p-12 lg:p-16 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 relative overflow-hidden">
+        {/* Subtle Ambient Emerald Glow */}
+        <div className="absolute top-1/3 left-10 w-96 h-96 bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Top Auth Buttons */}
-          <div className="flex items-center gap-2.5">
-            <SignInButton mode="modal">
-              <button className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/10 transition-all cursor-pointer">
-                Sign In
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <button className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer">
-                Sign Up
-              </button>
-            </SignUpButton>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Hero Section */}
-      <main className="flex-1 flex flex-col justify-center items-center py-16 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-        {/* Glow background accent */}
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-4xl mx-auto text-center space-y-8">
-          {/* Brand badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-100/90 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold shadow-xs">
-            <Lock className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Protected Operator Portal</span>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          </div>
-
-          {/* Hero Title */}
-          <div className="space-y-4">
-            <h1 className="text-4xl sm:text-6xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
-              Smart Farm Machinery Rental &{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 dark:from-emerald-400 dark:to-teal-300">
-                Automated Billing
-              </span>
+        <div className="relative z-10 space-y-6 sm:space-y-8 w-full max-w-lg mx-auto lg:mx-0 my-auto">
+          {/* Header Brand - Left Aligned */}
+          <div className="space-y-2.5 sm:space-y-3 text-left">
+            <div className="w-12 h-1 bg-emerald-600 dark:bg-emerald-500 rounded-full" />
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
+              Arkit Innovatives <span className="text-emerald-600 dark:text-emerald-500 font-semibold block sm:inline">pvt ltd</span>
             </h1>
-            <p className="text-base sm:text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto font-normal leading-relaxed">
-              Track field check-in sessions, manage farmer accounts, compute hourly machine rental rates, and generate instant tax invoices.
-            </p>
           </div>
 
-          {/* Primary CTA Button */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
-            <SignInButton mode="modal">
-              <button className="w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-xl shadow-emerald-600/25 transition-all flex items-center justify-center gap-2.5 cursor-pointer group">
-                <span>Sign In to Open Console</span>
-                <ArrowRight className="h-4.5 w-4.5 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </SignInButton>
+          {/* 3 Small Feature Cards Box */}
+          <div className="grid grid-cols-1 gap-3 sm:gap-4 pt-1">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex items-start gap-3.5 hover:border-emerald-500/30 transition-colors text-left">
+              <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                <Clock className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Session Billing & Tracking</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Real-time check-in timings and automated hourly rate calculation.</p>
+              </div>
+            </div>
 
-            <SignUpButton mode="modal">
-              <button className="w-full sm:w-auto px-8 py-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm transition-all cursor-pointer">
-                Create Operator Account
-              </button>
-            </SignUpButton>
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex items-start gap-3.5 hover:border-emerald-500/30 transition-colors text-left">
+              <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                <Receipt className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Instant Invoicing & Receipts</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Generate professional GST invoices and printable PDF slips.</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex items-start gap-3.5 hover:border-emerald-500/30 transition-colors text-left">
+              <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Analytics & Reports</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">Comprehensive revenue metrics, monthly trends, and billing history.</p>
+              </div>
+            </div>
           </div>
 
-          {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-12 text-left border-t border-slate-200/80 dark:border-slate-800/80">
-            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
-              <div className="h-10 w-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
-                <Clock className="h-5.5 w-5.5" />
-              </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-sm">2-Stage Field Check-In</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Log start time when machinery enters the field and complete billing upon check-out.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
-              <div className="h-10 w-10 rounded-xl bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 flex items-center justify-center">
-                <IndianRupee className="h-5.5 w-5.5" />
-              </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-sm">Paid / Not Paid Toggles</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Instant 1-click status updates for Users and Admins without requiring re-approval.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2.5">
-              <div className="h-10 w-10 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 flex items-center justify-center">
-                <Receipt className="h-5.5 w-5.5" />
-              </div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-sm">PDF Tax Receipts</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Professional A4 printable slips with customer location, GSTIN, and extra charge breakdown.
-              </p>
-            </div>
+          {/* Mobile Auth Buttons (Modal Mode on Mobile - Below lg Breakpoint) */}
+          <div className="block lg:hidden pt-2 w-full">
+            <Show when="signed-out">
+              <SignInButton mode="modal">
+                <button className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md shadow-emerald-600/20 active:scale-98 transition-all cursor-pointer">
+                  Sign In
+                </button>
+              </SignInButton>
+            </Show>
+            <Show when="signed-in">
+              <SignOutButton>
+                <button className="w-full py-3.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-sm cursor-pointer">
+                  Sign Out
+                </button>
+              </SignOutButton>
+            </Show>
           </div>
         </div>
-      </main>
+      </div>
 
-      {/* Footer Notice */}
-      <footer className="w-full border-t border-slate-200/80 dark:border-slate-800/80 bg-white/50 dark:bg-slate-900/50 py-4 text-center text-xs text-slate-500 dark:text-slate-400">
-        <div className="max-w-7xl mx-auto flex items-center justify-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-          <span>Only authenticated operators can access Agro Track billing records. Secured by Clerk & Convex Cloud.</span>
+      {/* RIGHT SIDE: 50% Width Panel on Desktop (Embedded Clerk SignIn Component - Hidden on Mobile) */}
+      <div className="hidden lg:flex w-1/2 flex-col justify-center items-center p-12 bg-white dark:bg-slate-900 relative z-10 min-h-screen min-h-[100dvh]">
+        <div className="w-full flex items-center justify-center">
+          <Show when="signed-out">
+            <SignIn routing="hash" />
+          </Show>
+          <Show when="signed-in">
+            <div className="text-center space-y-4">
+              <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">You are currently signed in.</p>
+              <SignOutButton>
+                <button className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md shadow-emerald-600/20 cursor-pointer">
+                  Sign Out
+                </button>
+              </SignOutButton>
+            </div>
+          </Show>
         </div>
-      </footer>
+      </div>
     </div>
   );
 };
