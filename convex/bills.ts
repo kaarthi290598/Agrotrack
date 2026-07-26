@@ -59,9 +59,9 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const { orgId, clerkUserId, role } = await requireOrgMember(ctx);
 
-    // Members cannot self-approve
+    // Supervisors (basic role) cannot self-approve
     let status = args.status;
-    if (role === "MEMBER" && status === "APPROVED") {
+    if (role === "SUPERVISOR" && status === "APPROVED") {
       status = "PENDING_APPROVAL";
     }
 
@@ -148,12 +148,12 @@ export const update = mutation({
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
 
-    if (role === "MEMBER" && bill.createdBy && bill.createdBy !== clerkUserId) {
+    if (role === "SUPERVISOR" && bill.createdBy && bill.createdBy !== clerkUserId) {
       throw new Error("Forbidden");
     }
 
     const { id, ...fields } = args;
-    if (role === "MEMBER" && fields.status === "APPROVED") {
+    if (role === "SUPERVISOR" && fields.status === "APPROVED") {
       fields.status = "PENDING_APPROVAL";
     }
 
@@ -216,7 +216,7 @@ export const remove = mutation({
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
 
-    if (role === "MEMBER") {
+    if (role === "SUPERVISOR") {
       if (bill.createdBy !== clerkUserId) throw new Error("Forbidden");
       if (bill.status === "APPROVED") {
         throw new Error("Cannot delete an approved bill");

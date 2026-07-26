@@ -23,9 +23,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Arkit Innovatives pvt ltd",
-  description: "Arkit Innovatives pvt ltd application",
-  applicationName: "Arkit Innovatives",
+  title: "Arkit Vedham India Pvt ltd",
+  description: "Arkit Vedham India Pvt ltd application",
+  applicationName: "Arkit Vedham India",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
@@ -48,7 +48,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                if (localStorage.getItem('theme') === 'dark') {
                   document.documentElement.classList.add('dark');
                 } else {
                   document.documentElement.classList.remove('dark');

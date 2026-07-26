@@ -84,7 +84,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (user && !canViewReports) {
-      toast({ type: "error", title: "Access Denied", description: "Reports page is restricted to Admin and Supervisor users." });
+      toast({ type: "error", title: "Access Denied", description: "Reports page is restricted to Admin and Business Operations Lead users." });
       router.replace("/billing");
     }
   }, [user, canViewReports, router, toast]);

@@ -49,6 +49,7 @@ function purgeLegacyMockIfNeeded() {
       if (
         settings.businessName === "Agro Track Machinery Services" ||
         settings.businessName === "Arkit Innovatives Services" ||
+        settings.businessName === "Arkit Vedham India Services" ||
         String(settings.businessName || "").includes("(Org ")
       ) {
         localStorage.setItem(

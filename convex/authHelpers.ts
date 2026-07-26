@@ -1,7 +1,7 @@
 import type { UserIdentity } from "convex/server";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
 
-export type AppRole = "ADMIN" | "SUPERVISOR" | "MEMBER";
+export type AppRole = "ADMIN" | "BUSINESS_OPERATIONS_LEAD" | "SUPERVISOR";
 
 type AuthCtx = QueryCtx | MutationCtx;
 
@@ -122,7 +122,7 @@ export async function requireAdmin(ctx: AuthCtx) {
 }
 
 export async function requireElevated(ctx: AuthCtx) {
-  return requireAppRole(ctx, ["ADMIN", "SUPERVISOR"]);
+  return requireAppRole(ctx, ["ADMIN", "BUSINESS_OPERATIONS_LEAD"]);
 }
 
 /** Ensure a document belongs to the caller's org (IDOR guard). */

@@ -34,8 +34,8 @@ import { Plus, RefreshCw, Trash2, Users } from "lucide-react";
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "ADMIN", label: "Admin" },
+  { value: "BUSINESS_OPERATIONS_LEAD", label: "Business Operations Lead" },
   { value: "SUPERVISOR", label: "Supervisor" },
-  { value: "MEMBER", label: "Member" },
 ];
 
 type MemberRow = {
@@ -80,7 +80,7 @@ export default function MembersPage() {
   const [suppressAutoSyncUntil, setSuppressAutoSyncUntil] = useState(0);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [memberEmail, setMemberEmail] = useState("");
-  const [memberRole, setMemberRole] = useState<UserRole>("MEMBER");
+  const [memberRole, setMemberRole] = useState<UserRole>("SUPERVISOR");
   const [isAdding, setIsAdding] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<MemberRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -281,7 +281,7 @@ export default function MembersPage() {
 
   const openAddMember = () => {
     setMemberEmail("");
-    setMemberRole("MEMBER");
+    setMemberRole("SUPERVISOR");
     setIsAddOpen(true);
   };
 
@@ -322,7 +322,7 @@ export default function MembersPage() {
       });
       setIsAddOpen(false);
       setMemberEmail("");
-      setMemberRole("MEMBER");
+      setMemberRole("SUPERVISOR");
     } catch (error) {
       toast({
         type: "error",
@@ -377,7 +377,7 @@ export default function MembersPage() {
         <CardHeader>
           <CardTitle className="text-base">Organization members</CardTitle>
           <CardDescription>
-            Application roles (Admin / Supervisor / Member) are stored in Convex.
+            Application roles (Admin / Business Operations Lead / Supervisor) are stored in Convex.
             Clerk always uses <code className="text-xs">org:member</code> for
             added users — that is expected and separate from the app role.
           </CardDescription>

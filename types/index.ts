@@ -18,7 +18,7 @@ export interface AdditionalCharge {
 export type BillStatus = "APPROVED" | "PENDING_APPROVAL" | "REJECTED" | "IN_PROGRESS";
 export type PaymentStatus = "PAID" | "UNPAID" | "PARTIAL_PAID";
 /** Application roles stored in Convex (independent of Clerk org roles). */
-export type UserRole = "ADMIN" | "SUPERVISOR" | "MEMBER";
+export type UserRole = "ADMIN" | "BUSINESS_OPERATIONS_LEAD" | "SUPERVISOR";
 
 export interface UserProfile {
   id: string;
@@ -31,9 +31,9 @@ export function isAppAdmin(role: UserRole | null | undefined): boolean {
   return role === "ADMIN";
 }
 
-/** ADMIN + SUPERVISOR — elevated operational access (not settings/members). */
+/** ADMIN + BUSINESS_OPERATIONS_LEAD — elevated operational access (not settings/members). */
 export function hasElevatedAccess(role: UserRole | null | undefined): boolean {
-  return role === "ADMIN" || role === "SUPERVISOR";
+  return role === "ADMIN" || role === "BUSINESS_OPERATIONS_LEAD";
 }
 
 export function canAccessSettings(role: UserRole | null | undefined): boolean {
@@ -45,22 +45,22 @@ export function canManageMembers(role: UserRole | null | undefined): boolean {
 }
 
 export function canAccessDashboard(role: UserRole | null | undefined): boolean {
-  return role === "ADMIN" || role === "SUPERVISOR";
+  return role === "ADMIN" || role === "BUSINESS_OPERATIONS_LEAD";
 }
 
 export function canAccessReports(role: UserRole | null | undefined): boolean {
-  return role === "ADMIN" || role === "SUPERVISOR";
+  return role === "ADMIN" || role === "BUSINESS_OPERATIONS_LEAD";
 }
 
-/** Paths each role may open. Unknown paths fall through to deny for MEMBERs. */
+/** Paths each role may open. Unknown paths fall through to deny for SUPERVISORs. */
 export function getAllowedPaths(role: UserRole | null | undefined): string[] {
   if (role === "ADMIN") {
     return ["/", "/billing", "/bills", "/customers", "/members", "/reports", "/settings"];
   }
-  if (role === "SUPERVISOR") {
+  if (role === "BUSINESS_OPERATIONS_LEAD") {
     return ["/", "/billing", "/bills", "/customers", "/reports"];
   }
-  // MEMBER
+  // SUPERVISOR (basic role)
   return ["/billing", "/bills", "/customers"];
 }
 

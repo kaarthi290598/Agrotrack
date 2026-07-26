@@ -3,8 +3,8 @@ import { v } from "convex/values";
 
 const appRole = v.union(
   v.literal("ADMIN"),
-  v.literal("SUPERVISOR"),
-  v.literal("MEMBER")
+  v.literal("BUSINESS_OPERATIONS_LEAD"),
+  v.literal("SUPERVISOR")
 );
 
 export default defineSchema({

@@ -17,21 +17,40 @@ type InvoiceDocumentProps = {
   currencySymbol: string;
 };
 
-export function InvoicePrintArea({ bill, settings, currencySymbol }: InvoiceDocumentProps) {
+export function InvoicePrintArea({
+  bill,
+  settings,
+  currencySymbol,
+}: InvoiceDocumentProps) {
   return (
-    <div id="print-area" className="hidden print:block print:p-8 bg-white text-black font-sans text-xs w-[210mm] min-h-[297mm]">
+    <div
+      id="print-area"
+      className="hidden print:block print:p-8 bg-white text-black font-sans text-xs w-[210mm] min-h-[297mm]"
+    >
       <div className="border-b-2 border-slate-350 pb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-800 tracking-tight uppercase leading-none">{settings.businessName}</h1>
-          <p className="text-[10px] text-slate-500 mt-1 max-w-xs">{settings.businessAddress}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Phone: {settings.phoneNumber}</p>
+          <h1 className="text-xl font-bold text-slate-800 tracking-tight uppercase leading-none">
+            {settings.businessName}
+          </h1>
+          <p className="text-[10px] text-slate-500 mt-1 max-w-xs">
+            {settings.businessAddress}
+          </p>
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            Phone: {settings.phoneNumber}
+          </p>
           {settings.gstNumber && (
-            <p className="text-[10px] text-slate-700 font-semibold mt-0.5">GSTIN: {settings.gstNumber}</p>
+            <p className="text-[10px] text-slate-700 font-semibold mt-0.5">
+              GSTIN: {settings.gstNumber}
+            </p>
           )}
         </div>
         <div className="text-right">
-          <h2 className="text-sm font-bold text-emerald-700 tracking-wide uppercase">Tax Invoice</h2>
-          <p className="font-semibold text-slate-900 mt-1.5">{bill.invoiceNumber}</p>
+          <h2 className="text-sm font-bold text-emerald-700 tracking-wide uppercase">
+            Tax Invoice
+          </h2>
+          <p className="font-semibold text-slate-900 mt-1.5">
+            {bill.invoiceNumber}
+          </p>
           <p className="text-[10px] text-slate-500 mt-0.5">Date: {bill.date}</p>
           <PdfPaymentBadge status={bill.paymentStatus} />
         </div>
@@ -39,8 +58,12 @@ export function InvoicePrintArea({ bill, settings, currencySymbol }: InvoiceDocu
 
       <div className="my-6 grid grid-cols-2 gap-8 bg-slate-50 p-4 rounded-lg border border-slate-100">
         <div>
-          <h3 className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Bill To:</h3>
-          <p className="font-bold text-slate-800 text-sm mt-1">{bill.customerName}</p>
+          <h3 className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">
+            Bill To:
+          </h3>
+          <p className="font-bold text-slate-800 text-sm mt-1">
+            {bill.customerName}
+          </p>
           <p className="text-slate-600 mt-0.5">Mobile: {bill.customerMobile}</p>
           {(bill.customerLocation || bill.customerState) && (
             <p className="text-slate-600 mt-0.5">
@@ -55,7 +78,9 @@ export function InvoicePrintArea({ bill, settings, currencySymbol }: InvoiceDocu
             Hours Rent Rate: {currencySymbol}
             {bill.hourlyRate} / hour
           </p>
-          <p className="text-[10px] text-slate-600">Usage Duration: {bill.hoursUsed} hr</p>
+          <p className="text-[10px] text-slate-600">
+            Usage Duration: {bill.hoursUsed} hr
+          </p>
         </div>
       </div>
 
@@ -71,7 +96,9 @@ export function InvoicePrintArea({ bill, settings, currencySymbol }: InvoiceDocu
           <tr className="border-b border-slate-150">
             <td className="p-2">
               <p className="font-semibold">Machine Rental Usage</p>
-              <span className="text-[10px] text-slate-450">Tillage / Harvesting services on hourly charges</span>
+              <span className="text-[10px] text-slate-450">
+                Harvesting services on hourly charges
+              </span>
             </td>
             <td className="p-2 text-center">
               {bill.hoursUsed} hr × {currencySymbol}
@@ -86,7 +113,9 @@ export function InvoicePrintArea({ bill, settings, currencySymbol }: InvoiceDocu
             <tr key={chg.id} className="border-b border-slate-150">
               <td className="p-2">
                 <p className="font-semibold">{chg.name}</p>
-                <span className="text-[10px] text-slate-450">Additional service/operating fees</span>
+                <span className="text-[10px] text-slate-450">
+                  Additional service/operating fees
+                </span>
               </td>
               <td className="p-2 text-center">Lump sum</td>
               <td className="p-2 text-right font-semibold">
@@ -137,30 +166,48 @@ export function InvoicePrintArea({ bill, settings, currencySymbol }: InvoiceDocu
 
       <div className="mt-16 grid grid-cols-2 gap-8 items-end border-t border-slate-100 pt-8">
         <div className="text-[9px] text-slate-500">
-          <span className="font-bold uppercase tracking-wider block text-slate-600 mb-1">Invoice Notes</span>
-          <p>{settings.invoiceNotes || "Please clear payment within due period."}</p>
+          <span className="font-bold uppercase tracking-wider block text-slate-600 mb-1">
+            Invoice Notes
+          </span>
+          <p>
+            {settings.invoiceNotes || "Please clear payment within due period."}
+          </p>
           {settings.footerText && <p className="mt-4">{settings.footerText}</p>}
         </div>
         <div className="text-right flex flex-col items-end">
           <div className="h-10 w-24 border-b border-slate-300" />
-          <p className="text-[10px] font-semibold text-slate-700 mt-2">Authorized Signatory</p>
+          <p className="text-[10px] font-semibold text-slate-700 mt-2">
+            Authorized Signatory
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-export function InvoicePreviewContent({ bill, settings, currencySymbol }: InvoiceDocumentProps) {
+export function InvoicePreviewContent({
+  bill,
+  settings,
+  currencySymbol,
+}: InvoiceDocumentProps) {
   return (
     <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-6 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono text-[11px] space-y-4 shadow-inner max-h-[50vh] overflow-y-auto">
       <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
         <div>
-          <h3 className="font-bold text-xs text-emerald-600">{settings.businessName}</h3>
-          <p className="text-[10px] text-slate-500">{settings.businessAddress}</p>
-          <p className="text-[10px] text-slate-500">Phone: {settings.phoneNumber}</p>
+          <h3 className="font-bold text-xs text-emerald-600">
+            {settings.businessName}
+          </h3>
+          <p className="text-[10px] text-slate-500">
+            {settings.businessAddress}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            Phone: {settings.phoneNumber}
+          </p>
         </div>
         <div className="text-right">
-          <h4 className="font-bold text-xs uppercase text-slate-400">Tax Invoice</h4>
+          <h4 className="font-bold text-xs uppercase text-slate-400">
+            Tax Invoice
+          </h4>
           <p className="font-bold">{bill.invoiceNumber}</p>
           <p className="text-[10px] text-slate-500 mt-0.5">Date: {bill.date}</p>
           <PdfPaymentBadge status={bill.paymentStatus} />
@@ -169,7 +216,9 @@ export function InvoicePreviewContent({ bill, settings, currencySymbol }: Invoic
 
       <div className="grid grid-cols-2 gap-4 text-[10px]">
         <div>
-          <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Farmer Info</span>
+          <span className="text-[9px] text-slate-400 uppercase tracking-wider block">
+            Farmer Info
+          </span>
           <p className="font-bold">{bill.customerName}</p>
           <p>Mobile: {bill.customerMobile}</p>
           {(bill.customerLocation || bill.customerState) && (
@@ -200,14 +249,19 @@ export function InvoicePreviewContent({ bill, settings, currencySymbol }: Invoic
           </thead>
           <tbody>
             <tr className="border-b border-slate-50 dark:border-slate-900">
-              <td className="py-2">Machine Rental Usage ({bill.hoursUsed} hr)</td>
+              <td className="py-2">
+                Machine Rental Usage ({bill.hoursUsed} hr)
+              </td>
               <td className="text-right py-2">
                 {currencySymbol}
                 {bill.hoursUsed * bill.hourlyRate}
               </td>
             </tr>
             {bill.extraCharges.map((chg) => (
-              <tr key={chg.id} className="border-b border-slate-50 dark:border-slate-900">
+              <tr
+                key={chg.id}
+                className="border-b border-slate-50 dark:border-slate-900"
+              >
                 <td className="py-2">{chg.name}</td>
                 <td className="text-right py-2">
                   +{currencySymbol}
@@ -224,7 +278,8 @@ export function InvoicePreviewContent({ bill, settings, currencySymbol }: Invoic
           <span className="text-slate-400">Subtotal:</span>
           <span>
             {currencySymbol}
-            {bill.hoursUsed * bill.hourlyRate + bill.extraCharges.reduce((s, c) => s + c.amount, 0)}
+            {bill.hoursUsed * bill.hourlyRate +
+              bill.extraCharges.reduce((s, c) => s + c.amount, 0)}
           </span>
         </div>
         {bill.discount > 0 && (

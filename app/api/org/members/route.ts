@@ -5,7 +5,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { getServerAuthedConvex } from "../../../../lib/convex-client";
 
-type AppRole = "ADMIN" | "SUPERVISOR" | "MEMBER";
+type AppRole = "ADMIN" | "BUSINESS_OPERATIONS_LEAD" | "SUPERVISOR";
 
 function memberDisplayName(user: {
   firstName?: string | null;
@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
     .trim()
     .toLowerCase();
   const orgId = String(body.orgId || sessionOrgId || "");
-  const role = (String(body.role || "MEMBER").toUpperCase() ||
-    "MEMBER") as AppRole;
+  const role = (String(body.role || "SUPERVISOR").toUpperCase() ||
+    "SUPERVISOR") as AppRole;
   const fullNameHint = String(body.fullName || "").trim();
 
   if (!email.includes("@")) {
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
   if (sessionOrgId && sessionOrgId !== orgId) {
     return NextResponse.json({ error: "Organization mismatch" }, { status: 403 });
   }
-  if (!["ADMIN", "SUPERVISOR", "MEMBER"].includes(role)) {
+  if (!["ADMIN", "BUSINESS_OPERATIONS_LEAD", "SUPERVISOR"].includes(role)) {
     return NextResponse.json({ error: "Invalid application role" }, { status: 400 });
   }
 

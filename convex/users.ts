@@ -7,11 +7,11 @@ import {
 
 const appRoleValidator = v.union(
   v.literal("ADMIN"),
-  v.literal("SUPERVISOR"),
-  v.literal("MEMBER")
+  v.literal("BUSINESS_OPERATIONS_LEAD"),
+  v.literal("SUPERVISOR")
 );
 
-type AppRole = "ADMIN" | "SUPERVISOR" | "MEMBER";
+type AppRole = "ADMIN" | "BUSINESS_OPERATIONS_LEAD" | "SUPERVISOR";
 
 /** Newly created members are exempt from pruning while Clerk lists catch up. */
 const PRUNE_GRACE_MS = 10 * 60 * 1000;
@@ -85,9 +85,9 @@ async function clearRemovalBlock(
 }
 
 function clerkOrgRoleToAppRole(clerkOrgRole?: string | null): AppRole {
-  // Org creator is org:admin → ADMIN; invited members default to MEMBER
+  // Org creator is org:admin → ADMIN; invited members default to SUPERVISOR
   // (unless a pending invite specifies another Convex role).
-  return clerkOrgRole === "org:admin" ? "ADMIN" : "MEMBER";
+  return clerkOrgRole === "org:admin" ? "ADMIN" : "SUPERVISOR";
 }
 
 async function findOrgUser(
@@ -108,8 +108,8 @@ async function findOrgUser(
   // Dedupe race leftovers — keep highest app role, newest updatedAt as tiebreaker.
   const rank: Record<AppRole, number> = {
     ADMIN: 3,
-    SUPERVISOR: 2,
-    MEMBER: 1,
+    BUSINESS_OPERATIONS_LEAD: 2,
+    SUPERVISOR: 1,
   };
   rows.sort((a: any, b: any) => {
     const roleDiff = (rank[b.role as AppRole] || 0) - (rank[a.role as AppRole] || 0);
@@ -643,7 +643,7 @@ export const upsertCreatedMember = mutation({
     await clearRemovalBlock(ctx, args.orgId, args.clerkUserId);
 
     const staged = await peekPendingRole(ctx, args.orgId, email);
-    const role = args.role || staged || "MEMBER";
+    const role = args.role || staged || "SUPERVISOR";
 
     const pending = await findPendingInvite(ctx, args.orgId, email);
     if (pending) {

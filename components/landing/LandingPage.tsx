@@ -3,6 +3,7 @@
 import React from "react";
 import { SignIn, SignInButton, SignOutButton, Show } from "@clerk/nextjs";
 import { Clock, Receipt, BarChart3 } from "lucide-react";
+import Image from "next/image";
 
 export const LandingPage: React.FC = () => {
   return (
@@ -12,17 +13,22 @@ export const LandingPage: React.FC = () => {
         {/* Subtle Ambient Emerald Glow */}
         <div className="absolute top-1/3 left-10 w-96 h-96 bg-emerald-500/10 dark:bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 space-y-6 sm:space-y-8 w-full max-w-lg mx-auto lg:mx-0 my-auto">
-          {/* Header Brand - Left Aligned */}
-          <div className="space-y-2.5 sm:space-y-3 text-left">
-            <div className="w-12 h-1 bg-emerald-600 dark:bg-emerald-500 rounded-full" />
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
-              Arkit Innovatives <span className="text-emerald-600 dark:text-emerald-500 font-semibold block sm:inline">pvt ltd</span>
-            </h1>
+        <div className="relative z-10 space-y-1 w-full max-w-2xl mx-auto lg:mx-0 my-auto">
+          {/* Header Brand Logo - Centered */}
+          <div className="flex justify-center w-full -mb-10 sm:-mb-14 md:-mb-20">
+            <div className="relative w-full h-52 sm:h-72 md:h-80 lg:h-96">
+              <Image 
+                src="/logo.png" 
+                alt="Arkit Vedham India Pvt Ltd Logo" 
+                fill 
+                className="object-contain object-center mix-blend-multiply dark:mix-blend-screen"
+                priority
+              />
+            </div>
           </div>
 
           {/* 3 Small Feature Cards Box */}
-          <div className="grid grid-cols-1 gap-3 sm:gap-4 pt-1">
+          <div className="grid grid-cols-1 gap-3 sm:gap-4">
             <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex items-start gap-3.5 hover:border-emerald-500/30 transition-colors text-left">
               <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
                 <Clock className="h-5 w-5" />

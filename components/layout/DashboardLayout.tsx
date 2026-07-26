@@ -134,7 +134,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                 <Building2 className="h-5 w-5" />
               </div>
               <div>
-                <h1 className="text-base font-bold text-slate-900 dark:text-white leading-none">Arkit Innovatives</h1>
+                <h1 className="text-base font-bold text-slate-900 dark:text-white leading-none">Arkit Vedham India</h1>
                 <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Pvt Ltd</span>
               </div>
             </div>
@@ -158,7 +158,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${
                         role === "ADMIN"
                           ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
-                          : role === "SUPERVISOR"
+                          : role === "BUSINESS_OPERATIONS_LEAD"
                             ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                             : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
                       }`}>
@@ -199,7 +199,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                     </button>
                     <button
                       type="button"
-                      onClick={() => switchRole("MEMBER")}
+                      onClick={() => switchRole("SUPERVISOR")}
                       className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-semibold transition-all cursor-pointer ${
                         !isAdmin
                           ? "bg-blue-600 text-white shadow-xs"
@@ -207,7 +207,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       }`}
                     >
                       <UserCheck className="h-3.5 w-3.5" />
-                      <span>Member</span>
+                      <span>Supervisor</span>
                     </button>
                   </div>
                 </div>
@@ -311,7 +311,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-md">
                     <Building2 className="h-4 w-4" />
                   </div>
-                  <span className="text-sm font-bold text-slate-900 dark:text-white">Arkit Innovatives</span>
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">Arkit Vedham India</span>
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
@@ -333,7 +333,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${
                         role === "ADMIN"
                           ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
-                          : role === "SUPERVISOR"
+                          : role === "BUSINESS_OPERATIONS_LEAD"
                             ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                             : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
                       }`}>
@@ -433,9 +433,9 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               <Building2 className="h-4 w-4" />
             </div>
             <div>
-              <span className="text-sm font-bold text-slate-900 dark:text-white leading-none block">Arkit Innovatives</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white leading-none block">Arkit Vedham India</span>
               <span className="text-[9px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400">
-                {user?.role || "Member"}
+                {user?.role || "Supervisor"}
               </span>
             </div>
           </div>
