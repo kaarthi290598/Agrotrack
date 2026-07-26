@@ -4,9 +4,12 @@ import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { ReactNode, useCallback, useMemo } from "react";
 
-const convexUrl =
-  process.env.NEXT_PUBLIC_CONVEX_URL ||
-  "https://different-puffin-360.convex.cloud";
+const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+if (!convexUrl) {
+  throw new Error(
+    "NEXT_PUBLIC_CONVEX_URL is not set. Use the prod Convex URL on arkit.online (https://grandiose-bulldog-410.convex.cloud)."
+  );
+}
 const convex = new ConvexReactClient(convexUrl);
 
 /**
