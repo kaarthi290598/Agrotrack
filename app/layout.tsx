@@ -5,7 +5,8 @@ import "./globals.css";
 import { AuthProvider } from "../components/auth/AuthProvider";
 import { ToastProvider } from "../components/ui/Toast";
 import { ProtectedLayout } from "../components/auth/ProtectedLayout";
-import { DashboardLayout } from "../components/layout/DashboardLayout";
+import { AppShell } from "../components/auth/AppShell";
+import ConvexClientProvider from "../components/ConvexClientProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,10 +22,6 @@ export const metadata: Metadata = {
   title: "Agro Track - Billing & Session Management",
   description: "Agro Track: Track machine rental sessions, manage farmer details, and generate professional invoices.",
 };
-
-import { Show } from "@clerk/nextjs";
-import ConvexClientProvider from "../components/ConvexClientProvider";
-import { LandingPage } from "../components/landing/LandingPage";
 
 export default function RootLayout({
   children,
@@ -57,12 +54,7 @@ export default function RootLayout({
             <AuthProvider>
               <ToastProvider>
                 <ProtectedLayout>
-                  <Show when="signed-out">
-                    <LandingPage />
-                  </Show>
-                  <Show when="signed-in">
-                    <DashboardLayout>{children}</DashboardLayout>
-                  </Show>
+                  <AppShell>{children}</AppShell>
                 </ProtectedLayout>
               </ToastProvider>
             </AuthProvider>

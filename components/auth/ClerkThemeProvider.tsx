@@ -33,7 +33,12 @@ export function ClerkThemeProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   return (
-    <ClerkProvider appearance={getClerkAppearance(isDark)}>
+    <ClerkProvider
+      appearance={getClerkAppearance(isDark)}
+      taskUrls={{
+        "choose-organization": "/session-tasks/choose-organization",
+      }}
+    >
       {children}
     </ClerkProvider>
   );

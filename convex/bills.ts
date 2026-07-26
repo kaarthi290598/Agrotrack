@@ -1,27 +1,26 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-
-async function getEffectiveOrgId(ctx: any, passedOrgId?: string) {
-  const identity = await ctx.auth.getUserIdentity();
-  return identity?.org_id || (identity as any)?.orgId || passedOrgId;
-}
+import {
+  requireOrgMember,
+  requireElevated,
+  requireAdmin,
+  assertSameOrg,
+} from "./authHelpers";
 
 export const getAll = query({
-  args: { orgId: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    const orgId = await getEffectiveOrgId(ctx, args.orgId);
-    const all = await ctx.db.query("bills").order("desc").collect();
-    if (orgId) {
-      return all.filter((b) => b.orgId === orgId);
-    }
-    // No org selected — only personal/unscoped records, never all orgs' data
-    return all.filter((b) => !b.orgId);
+  args: {},
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgMember(ctx);
+    return await ctx.db
+      .query("bills")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .order("desc")
+      .collect();
   },
 });
 
 export const create = mutation({
   args: {
-    orgId: v.optional(v.string()),
     customerId: v.string(),
     customerName: v.optional(v.string()),
     customerMobile: v.optional(v.string()),
@@ -58,31 +57,41 @@ export const create = mutation({
     createdByEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const orgId = await getEffectiveOrgId(ctx, args.orgId);
-    
-    // Fetch settings to get invoice prefix
-    const settings = await ctx.db.query("settings").first();
+    const { orgId, clerkUserId, role } = await requireOrgMember(ctx);
+
+    // Members cannot self-approve
+    let status = args.status;
+    if (role === "MEMBER" && status === "APPROVED") {
+      status = "PENDING_APPROVAL";
+    }
+
+    const settings = await ctx.db
+      .query("settings")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .first();
     const prefix = settings?.invoicePrefix || "INV-";
 
-    // Calculate max invoice number
-    const bills = await ctx.db.query("bills").collect();
+    const orgBills = await ctx.db
+      .query("bills")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .collect();
+
     let maxNum = 0;
-    bills.forEach((b) => {
+    for (const b of orgBills) {
       if (b.invoiceNumber.startsWith(prefix)) {
         const suffix = b.invoiceNumber.substring(prefix.length);
         const num = parseInt(suffix, 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
-        }
+        if (!isNaN(num) && num > maxNum) maxNum = num;
       }
-    });
+    }
 
-    const nextNum = maxNum + 1;
-    const invoiceNumber = `${prefix}${String(nextNum).padStart(5, "0")}`;
+    const invoiceNumber = `${prefix}${String(maxNum + 1).padStart(5, "0")}`;
 
     const billId = await ctx.db.insert("bills", {
       ...args,
+      status,
       orgId,
+      createdBy: args.createdBy || clerkUserId,
       invoiceNumber,
       createdAt: Date.now(),
     });
@@ -134,7 +143,20 @@ export const update = mutation({
     balanceAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { orgId, role, clerkUserId } = await requireOrgMember(ctx);
+    const bill = await ctx.db.get(args.id);
+    if (!bill) throw new Error("Bill not found");
+    assertSameOrg(bill.orgId, orgId, "Bill");
+
+    if (role === "MEMBER" && bill.createdBy && bill.createdBy !== clerkUserId) {
+      throw new Error("Forbidden");
+    }
+
     const { id, ...fields } = args;
+    if (role === "MEMBER" && fields.status === "APPROVED") {
+      fields.status = "PENDING_APPROVAL";
+    }
+
     await ctx.db.patch(id, fields);
   },
 });
@@ -151,6 +173,11 @@ export const updatePaymentStatus = mutation({
     balanceAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { orgId } = await requireElevated(ctx);
+    const bill = await ctx.db.get(args.id);
+    if (!bill) throw new Error("Bill not found");
+    assertSameOrg(bill.orgId, orgId, "Bill");
+
     await ctx.db.patch(args.id, {
       paymentStatus: args.paymentStatus,
       amountPaid: args.amountPaid,
@@ -162,6 +189,10 @@ export const updatePaymentStatus = mutation({
 export const approve = mutation({
   args: { id: v.id("bills") },
   handler: async (ctx, args) => {
+    const { orgId } = await requireElevated(ctx);
+    const bill = await ctx.db.get(args.id);
+    if (!bill) throw new Error("Bill not found");
+    assertSameOrg(bill.orgId, orgId, "Bill");
     await ctx.db.patch(args.id, { status: "APPROVED" });
   },
 });
@@ -169,6 +200,10 @@ export const approve = mutation({
 export const reject = mutation({
   args: { id: v.id("bills") },
   handler: async (ctx, args) => {
+    const { orgId } = await requireElevated(ctx);
+    const bill = await ctx.db.get(args.id);
+    if (!bill) throw new Error("Bill not found");
+    assertSameOrg(bill.orgId, orgId, "Bill");
     await ctx.db.patch(args.id, { status: "REJECTED" });
   },
 });
@@ -176,6 +211,18 @@ export const reject = mutation({
 export const remove = mutation({
   args: { id: v.id("bills") },
   handler: async (ctx, args) => {
+    const { orgId, role, clerkUserId } = await requireOrgMember(ctx);
+    const bill = await ctx.db.get(args.id);
+    if (!bill) throw new Error("Bill not found");
+    assertSameOrg(bill.orgId, orgId, "Bill");
+
+    if (role === "MEMBER") {
+      if (bill.createdBy !== clerkUserId) throw new Error("Forbidden");
+      if (bill.status === "APPROVED") {
+        throw new Error("Cannot delete an approved bill");
+      }
+    }
+
     await ctx.db.delete(args.id);
   },
 });
@@ -183,17 +230,22 @@ export const remove = mutation({
 export const backfillCustomerSnapshots = mutation({
   args: {},
   handler: async (ctx) => {
-    const bills = await ctx.db.query("bills").collect();
-    const customers = await ctx.db.query("customers").collect();
+    const { orgId } = await requireAdmin(ctx);
+    const bills = await ctx.db
+      .query("bills")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .collect();
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .collect();
     const customerMap = new Map(customers.map((c) => [c._id, c]));
 
     let updated = 0;
     for (const bill of bills) {
       if (bill.customerName) continue;
-
       const customer = customerMap.get(bill.customerId as any);
       if (!customer) continue;
-
       await ctx.db.patch(bill._id, {
         customerName: customer.name,
         customerMobile: customer.mobile,

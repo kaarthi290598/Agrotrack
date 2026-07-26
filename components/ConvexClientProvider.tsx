@@ -1,17 +1,57 @@
 "use client";
 
-import { ConvexReactClient } from "convex/react";
-import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
-import { ReactNode } from "react";
+import { ReactNode, useCallback, useMemo } from "react";
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "https://different-puffin-360.convex.cloud";
+const convexUrl =
+  process.env.NEXT_PUBLIC_CONVEX_URL ||
+  "https://different-puffin-360.convex.cloud";
 const convex = new ConvexReactClient(convexUrl);
 
-export default function ConvexClientProvider({ children }: { children: ReactNode }) {
+/**
+ * Always use the Clerk "convex" JWT template so custom claims (org_id, org_role)
+ * reach Convex. ConvexProviderWithClerk may fall back to the raw session token
+ * when sessionClaims.aud === "convex", which omits template claims.
+ */
+function useConvexClerkAuth() {
+  const { isLoaded, isSignedIn, getToken, orgId, orgRole, sessionId } =
+    useAuth();
+
+  const fetchAccessToken = useCallback(
+    async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
+      try {
+        return await getToken({
+          template: "convex",
+          skipCache: forceRefreshToken,
+        });
+      } catch {
+        return null;
+      }
+    },
+    // Re-auth when active org/session changes so Convex gets a fresh token.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orgId, orgRole, sessionId]
+  );
+
+  return useMemo(
+    () => ({
+      isLoading: !isLoaded,
+      isAuthenticated: isSignedIn ?? false,
+      fetchAccessToken,
+    }),
+    [isLoaded, isSignedIn, fetchAccessToken]
+  );
+}
+
+export default function ConvexClientProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
-    <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+    <ConvexProviderWithAuth client={convex} useAuth={useConvexClerkAuth}>
       {children}
-    </ConvexProviderWithClerk>
+    </ConvexProviderWithAuth>
   );
 }

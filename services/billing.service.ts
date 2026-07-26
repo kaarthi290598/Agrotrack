@@ -1,219 +1,128 @@
 import { Bill, DashboardStats, UserProfile } from "../types";
-import { getDBBills, saveDBBills, getDBCustomers, getDBSettings } from "./db";
-import { ConvexHttpClient } from "convex/browser";
+import { getDBBills, saveDBBills } from "./db";
 import { api } from "../convex/_generated/api";
 import { customerService } from "./customer.service";
 import { isBillCreatedByUser } from "../lib/utils";
 import { resolveBillCustomer } from "../lib/bill-customer";
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "https://different-puffin-360.convex.cloud";
-const convex = new ConvexHttpClient(convexUrl);
+import { getAuthedConvexClient } from "../lib/convex-client";
 
 export const billingService = {
-  getAll: async (orgId?: string): Promise<Bill[]> => {
-    try {
-      const data = await convex.query(api.bills.getAll, { orgId });
-      const mapped: Bill[] = data.map((b) => ({
-        id: b._id,
-        invoiceNumber: b.invoiceNumber,
-        customerId: b.customerId,
-        customerName: b.customerName,
-        customerMobile: b.customerMobile,
-        customerLocation: b.customerLocation,
-        customerState: b.customerState,
-        date: b.date,
-        startTime: b.startTime,
-        endTime: b.endTime,
-        hoursUsed: b.hoursUsed,
-        hourlyRate: b.hourlyRate,
-        extraCharges: b.extraCharges,
-        discount: b.discount,
-        grandTotal: b.grandTotal,
-        status: b.status,
-        paymentStatus: b.paymentStatus,
-        amountPaid: b.amountPaid,
-        balanceAmount: b.balanceAmount,
-        createdBy: b.createdBy,
-        createdByEmail: b.createdByEmail,
-        createdAt: b.createdAt,
-      }));
-      // Always sync local cache so stale mock data cannot linger
-      saveDBBills(mapped);
-      return mapped;
-    } catch (e) {
-      console.warn("Falling back to local DB for bills:", e);
-      return getDBBills();
-    }
+  getAll: async (_orgId?: string): Promise<Bill[]> => {
+    const convex = await getAuthedConvexClient();
+    const data = await convex.query(api.bills.getAll, {});
+    const mapped: Bill[] = data.map((b) => ({
+      id: b._id,
+      invoiceNumber: b.invoiceNumber,
+      customerId: b.customerId,
+      customerName: b.customerName,
+      customerMobile: b.customerMobile,
+      customerLocation: b.customerLocation,
+      customerState: b.customerState,
+      date: b.date,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      hoursUsed: b.hoursUsed,
+      hourlyRate: b.hourlyRate,
+      extraCharges: b.extraCharges,
+      discount: b.discount,
+      grandTotal: b.grandTotal,
+      status: b.status,
+      paymentStatus: b.paymentStatus,
+      amountPaid: b.amountPaid,
+      balanceAmount: b.balanceAmount,
+      createdBy: b.createdBy,
+      createdByEmail: b.createdByEmail,
+      createdAt: b.createdAt,
+    }));
+    saveDBBills(mapped);
+    return mapped;
   },
 
-  create: async (billData: Omit<Bill, "id" | "invoiceNumber" | "createdAt">, orgId?: string): Promise<Bill> => {
-    try {
-      const res = await convex.mutation(api.bills.create, {
-        ...billData,
-        orgId,
-        status: billData.status || "PENDING_APPROVAL",
-        paymentStatus: (billData.paymentStatus as any) || "UNPAID",
-      });
-      const newBill: Bill = {
-        ...billData,
-        id: res.id,
-        invoiceNumber: res.invoiceNumber,
-        status: billData.status || "PENDING_APPROVAL",
-        paymentStatus: billData.paymentStatus || "UNPAID",
-        createdAt: Date.now(),
-      };
-      return newBill;
-    } catch (e) {
-      console.warn("Convex bill create fallback:", e);
-      const bills = getDBBills();
-      const settings = getDBSettings();
-      let maxNum = 0;
-      const prefix = settings.invoicePrefix || "INV-";
-      bills.forEach((b) => {
-        if (b.invoiceNumber.startsWith(prefix)) {
-          const suffix = b.invoiceNumber.substring(prefix.length);
-          const num = parseInt(suffix, 10);
-          if (!isNaN(num) && num > maxNum) {
-            maxNum = num;
-          }
-        }
-      });
-      const nextNum = maxNum + 1;
-      const invoiceNumber = `${prefix}${String(nextNum).padStart(5, "0")}`;
-      const newBill: Bill = {
-        ...billData,
-        id: `bill-${Date.now()}`,
-        invoiceNumber,
-        status: billData.status || "PENDING_APPROVAL",
-        paymentStatus: billData.paymentStatus || "UNPAID",
-        createdAt: Date.now(),
-      };
-      bills.unshift(newBill);
-      saveDBBills(bills);
-      return newBill;
-    }
-  },
-
-  update: async (id: string, updatedFields: Partial<Omit<Bill, "id" | "invoiceNumber" | "createdAt">>): Promise<Bill> => {
-    try {
-      if (id.length > 15) {
-        await convex.mutation(api.bills.update, {
-          id: id as any,
-          ...(updatedFields as any),
-        });
-        return { id, ...updatedFields } as Bill;
-      }
-    } catch (e) {
-      console.warn("Convex bill update fallback:", e);
-    }
-    const bills = getDBBills();
-    const index = bills.findIndex((b) => b.id === id);
-    if (index === -1) {
-      return { id, ...updatedFields } as Bill;
-    }
-    const updatedBill: Bill = {
-      ...bills[index],
-      ...updatedFields,
-      status: updatedFields.status !== undefined ? updatedFields.status : bills[index].status,
+  create: async (
+    billData: Omit<Bill, "id" | "invoiceNumber" | "createdAt">,
+    _orgId?: string
+  ): Promise<Bill> => {
+    const convex = await getAuthedConvexClient();
+    const res = await convex.mutation(api.bills.create, {
+      ...billData,
+      status: billData.status || "PENDING_APPROVAL",
+      paymentStatus: (billData.paymentStatus as any) || "UNPAID",
+    });
+    return {
+      ...billData,
+      id: res.id,
+      invoiceNumber: res.invoiceNumber,
+      status: billData.status || "PENDING_APPROVAL",
+      paymentStatus: billData.paymentStatus || "UNPAID",
+      createdAt: Date.now(),
     };
-    bills[index] = updatedBill;
-    saveDBBills(bills);
-    return updatedBill;
+  },
+
+  update: async (
+    id: string,
+    updatedFields: Partial<Omit<Bill, "id" | "invoiceNumber" | "createdAt">>
+  ): Promise<Bill> => {
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.bills.update, {
+      id: id as any,
+      ...(updatedFields as any),
+    });
+    return { id, ...updatedFields } as Bill;
   },
 
   updatePaymentStatus: async (
-    id: string, 
+    id: string,
     paymentStatus: "PAID" | "UNPAID" | "PARTIAL_PAID",
     amountPaid?: number
   ): Promise<Bill> => {
-    try {
-      if (id.length > 15) {
-        const localBills = getDBBills();
-        const target = localBills.find((b) => b.id === id);
-        const total = target?.grandTotal || 0;
-        const paid = paymentStatus === "PARTIAL_PAID" ? (amountPaid || 0) : paymentStatus === "PAID" ? total : 0;
-        const balance = Math.max(0, total - paid);
+    const convex = await getAuthedConvexClient();
+    const localBills = getDBBills();
+    const target = localBills.find((b) => b.id === id);
+    const total = target?.grandTotal || 0;
+    const paid =
+      paymentStatus === "PARTIAL_PAID"
+        ? amountPaid || 0
+        : paymentStatus === "PAID"
+          ? total
+          : 0;
+    const balance = Math.max(0, total - paid);
 
-        await convex.mutation(api.bills.updatePaymentStatus, {
-          id: id as any,
-          paymentStatus: paymentStatus as any,
-          amountPaid: paid,
-          balanceAmount: balance,
-        });
-      }
-    } catch (e) {
-      console.warn("Convex payment status update fallback:", e);
-    }
+    await convex.mutation(api.bills.updatePaymentStatus, {
+      id: id as any,
+      paymentStatus: paymentStatus as any,
+      amountPaid: paid,
+      balanceAmount: balance,
+    });
+
     const bills = getDBBills();
     const index = bills.findIndex((b) => b.id === id);
     if (index === -1) return { id, paymentStatus } as Bill;
-    
+
     const targetBill = bills[index];
     targetBill.paymentStatus = paymentStatus;
-    
-    if (paymentStatus === "PARTIAL_PAID") {
-      const paid = Math.min(targetBill.grandTotal, Math.max(0, amountPaid || 0));
-      targetBill.amountPaid = paid;
-      targetBill.balanceAmount = Math.max(0, targetBill.grandTotal - paid);
-    } else if (paymentStatus === "PAID") {
-      targetBill.amountPaid = targetBill.grandTotal;
-      targetBill.balanceAmount = 0;
-    } else {
-      targetBill.amountPaid = 0;
-      targetBill.balanceAmount = targetBill.grandTotal;
-    }
-
+    targetBill.amountPaid = paid;
+    targetBill.balanceAmount = balance;
     bills[index] = targetBill;
     saveDBBills(bills);
     return targetBill;
   },
 
   approve: async (id: string): Promise<Bill> => {
-    try {
-      if (id.length > 15) {
-        await convex.mutation(api.bills.approve, { id: id as any });
-        return { id, status: "APPROVED" } as Bill;
-      }
-    } catch (e) {
-      console.warn("Convex bill approve fallback:", e);
-    }
-    const bills = getDBBills();
-    const index = bills.findIndex((b) => b.id === id);
-    if (index === -1) return { id, status: "APPROVED" } as Bill;
-    bills[index].status = "APPROVED";
-    saveDBBills(bills);
-    return bills[index];
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.bills.approve, { id: id as any });
+    return { id, status: "APPROVED" } as Bill;
   },
 
   reject: async (id: string): Promise<Bill> => {
-    try {
-      if (id.length > 15) {
-        await convex.mutation(api.bills.reject, { id: id as any });
-        return { id, status: "REJECTED" } as Bill;
-      }
-    } catch (e) {
-      console.warn("Convex bill reject fallback:", e);
-    }
-    const bills = getDBBills();
-    const index = bills.findIndex((b) => b.id === id);
-    if (index === -1) return { id, status: "REJECTED" } as Bill;
-    bills[index].status = "REJECTED";
-    saveDBBills(bills);
-    return bills[index];
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.bills.reject, { id: id as any });
+    return { id, status: "REJECTED" } as Bill;
   },
 
   delete: async (id: string): Promise<void> => {
-    try {
-      if (id.length > 15) {
-        await convex.mutation(api.bills.remove, { id: id as any });
-        return;
-      }
-    } catch (e) {
-      console.warn("Convex bill delete fallback:", e);
-    }
-    const bills = getDBBills();
-    const updated = bills.filter((b) => b.id !== id);
-    saveDBBills(updated);
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.bills.remove, { id: id as any });
+    saveDBBills(getDBBills().filter((b) => b.id !== id));
   },
 
   bulkApprove: async (ids: string[]): Promise<void> => {
@@ -235,30 +144,31 @@ export const billingService = {
   },
 
   backfillCustomerSnapshots: async (): Promise<{ updated: number; total: number }> => {
-    try {
-      return await convex.mutation(api.bills.backfillCustomerSnapshots, {});
-    } catch (e) {
-      console.warn("Convex backfill customer snapshots fallback:", e);
-      return { updated: 0, total: 0 };
-    }
+    const convex = await getAuthedConvexClient();
+    return await convex.mutation(api.bills.backfillCustomerSnapshots, {});
   },
 
   getStats: async (
-    orgId?: string, 
-    user?: UserProfile | null, 
+    orgId?: string,
+    user?: UserProfile | null,
     isAdmin: boolean = true
-  ): Promise<DashboardStats & { 
-    monthlyStats: { date: string; amount: number }[];
-    monthlyRevenue: { year: number; month: number; amount: number }[];
-    availableYears: number[];
-    locationStats: { location: string; amount: number }[];
-  }> => {
+  ): Promise<
+    DashboardStats & {
+      monthlyStats: { date: string; amount: number }[];
+      monthlyRevenue: { year: number; month: number; amount: number }[];
+      availableYears: number[];
+      locationStats: { location: string; amount: number }[];
+    }
+  > => {
     const rawBills = await billingService.getAll(orgId);
     const customers = await customerService.getAll(orgId);
 
-    // Scoped bills for member vs admin (Only APPROVED & FULLY PAID bills count towards revenue & reports)
-    const bills = rawBills.filter((b) => isBillCreatedByUser(b, user || null, isAdmin) && b.status === "APPROVED" && b.paymentStatus === "PAID");
-
+    const bills = rawBills.filter(
+      (b) =>
+        isBillCreatedByUser(b, user || null, isAdmin) &&
+        b.status === "APPROVED" &&
+        b.paymentStatus === "PAID"
+    );
     const customerMap = new Map(customers.map((c) => [c.id, c]));
 
     const totalCustomers = customers.length;

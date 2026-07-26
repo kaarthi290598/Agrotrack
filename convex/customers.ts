@@ -1,34 +1,32 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-
-async function getEffectiveOrgId(ctx: any, passedOrgId?: string) {
-  const identity = await ctx.auth.getUserIdentity();
-  return identity?.org_id || (identity as any)?.orgId || passedOrgId;
-}
+import { requireOrgMember, assertSameOrg } from "./authHelpers";
 
 export const getAll = query({
-  args: { orgId: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    const orgId = await getEffectiveOrgId(ctx, args.orgId);
-    const all = await ctx.db.query("customers").order("desc").collect();
-    if (orgId) {
-      return all.filter((c) => c.orgId === orgId);
-    }
-    // No org selected — only personal/unscoped records, never all orgs' data
-    return all.filter((c) => !c.orgId);
+  args: {},
+  handler: async (ctx) => {
+    const { orgId } = await requireOrgMember(ctx);
+    return await ctx.db
+      .query("customers")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .order("desc")
+      .collect();
   },
 });
 
 export const getById = query({
   args: { id: v.id("customers") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    const { orgId } = await requireOrgMember(ctx);
+    const customer = await ctx.db.get(args.id);
+    if (!customer) return null;
+    assertSameOrg(customer.orgId, orgId, "Customer");
+    return customer;
   },
 });
 
 export const create = mutation({
   args: {
-    orgId: v.optional(v.string()),
     name: v.string(),
     mobile: v.string(),
     location: v.optional(v.string()),
@@ -37,13 +35,12 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const orgId = await getEffectiveOrgId(ctx, args.orgId);
-    const customerId = await ctx.db.insert("customers", {
+    const { orgId } = await requireOrgMember(ctx);
+    return await ctx.db.insert("customers", {
       ...args,
       orgId,
       createdAt: Date.now(),
     });
-    return customerId;
   },
 });
 
@@ -58,6 +55,11 @@ export const update = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const { orgId } = await requireOrgMember(ctx);
+    const customer = await ctx.db.get(args.id);
+    if (!customer) throw new Error("Customer not found");
+    assertSameOrg(customer.orgId, orgId, "Customer");
+
     const { id, ...fields } = args;
     await ctx.db.patch(id, fields);
   },
@@ -66,6 +68,10 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("customers") },
   handler: async (ctx, args) => {
+    const { orgId } = await requireOrgMember(ctx);
+    const customer = await ctx.db.get(args.id);
+    if (!customer) throw new Error("Customer not found");
+    assertSameOrg(customer.orgId, orgId, "Customer");
     await ctx.db.delete(args.id);
   },
 });

@@ -1,31 +1,23 @@
 import { Customer } from "../types";
 import { getDBCustomers, saveDBCustomers } from "./db";
-import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api";
-
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "https://different-puffin-360.convex.cloud";
-const convex = new ConvexHttpClient(convexUrl);
+import { getAuthedConvexClient } from "../lib/convex-client";
 
 export const customerService = {
-  getAll: async (orgId?: string): Promise<Customer[]> => {
-    try {
-      const data = await convex.query(api.customers.getAll, { orgId });
-      const mapped: Customer[] = data.map((c) => ({
-        id: c._id,
-        name: c.name,
-        mobile: c.mobile,
-        location: c.location,
-        state: c.state,
-        notes: c.notes,
-        createdAt: c.createdAt,
-      }));
-      // Always sync local cache so stale mock data cannot linger
-      saveDBCustomers(mapped);
-      return mapped;
-    } catch (e) {
-      console.warn("Falling back to local DB for customers:", e);
-      return getDBCustomers();
-    }
+  getAll: async (_orgId?: string): Promise<Customer[]> => {
+    const convex = await getAuthedConvexClient();
+    const data = await convex.query(api.customers.getAll, {});
+    const mapped: Customer[] = data.map((c) => ({
+      id: c._id,
+      name: c.name,
+      mobile: c.mobile,
+      location: c.location,
+      state: c.state,
+      notes: c.notes,
+      createdAt: c.createdAt,
+    }));
+    saveDBCustomers(mapped);
+    return mapped;
   },
 
   getById: async (id: string, orgId?: string): Promise<Customer | null> => {
@@ -33,48 +25,36 @@ export const customerService = {
     return customers.find((c) => c.id === id) || null;
   },
 
-  create: async (customerData: Omit<Customer, "id" | "createdAt">, orgId?: string): Promise<Customer> => {
-    let newCustomer: Customer;
-    try {
-      const id = await convex.mutation(api.customers.create, { ...customerData, orgId });
-      newCustomer = {
-        ...customerData,
-        id,
-        createdAt: Date.now(),
-      };
-    } catch (e) {
-      console.warn("Convex customer create fallback:", e);
-      newCustomer = {
-        ...customerData,
-        id: `cust-${Date.now()}`,
-        createdAt: Date.now(),
-      };
-    }
-    // Always persist to local DB immediately so UI sees it instantly
+  create: async (
+    customerData: Omit<Customer, "id" | "createdAt">,
+    _orgId?: string
+  ): Promise<Customer> => {
+    const convex = await getAuthedConvexClient();
+    const id = await convex.mutation(api.customers.create, { ...customerData });
+    const newCustomer: Customer = {
+      ...customerData,
+      id,
+      createdAt: Date.now(),
+    };
     const local = getDBCustomers();
-    const updated = [newCustomer, ...local.filter((c) => c.id !== newCustomer.id)];
-    saveDBCustomers(updated);
+    saveDBCustomers([newCustomer, ...local.filter((c) => c.id !== newCustomer.id)]);
     return newCustomer;
   },
 
   update: async (id: string, customerData: Partial<Customer>): Promise<Customer> => {
-    let updatedCustomer: Customer = { ...customerData, id, createdAt: Date.now() } as Customer;
-    try {
-      if (id.length > 15) {
-        await convex.mutation(api.customers.update, {
-          id: id as any,
-          ...customerData,
-        });
-      }
-    } catch (e) {
-      console.warn("Convex customer update fallback:", e);
-    }
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.customers.update, {
+      id: id as any,
+      ...customerData,
+    });
     const customers = getDBCustomers();
     const index = customers.findIndex((c) => c.id === id);
+    let updatedCustomer: Customer;
     if (index !== -1) {
       customers[index] = { ...customers[index], ...customerData };
       updatedCustomer = customers[index];
     } else {
+      updatedCustomer = { ...customerData, id, createdAt: Date.now() } as Customer;
       customers.unshift(updatedCustomer);
     }
     saveDBCustomers(customers);
@@ -82,15 +62,8 @@ export const customerService = {
   },
 
   delete: async (id: string): Promise<void> => {
-    try {
-      if (id.length > 15) {
-        await convex.mutation(api.customers.remove, { id: id as any });
-      }
-    } catch (e) {
-      console.warn("Convex customer delete fallback:", e);
-    }
-    const customers = getDBCustomers();
-    const updated = customers.filter((c) => c.id !== id);
-    saveDBCustomers(updated);
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.customers.remove, { id: id as any });
+    saveDBCustomers(getDBCustomers().filter((c) => c.id !== id));
   },
 };

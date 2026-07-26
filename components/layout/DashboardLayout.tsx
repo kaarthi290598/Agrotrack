@@ -53,7 +53,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const { user, signOut, switchRole } = useAuth();
+  const { user, isLoaded, isRoleLoading, signOut, switchRole } = useAuth();
   const { orgId, orgRole } = useClerkAuth();
   const { organization } = useOrganization();
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -76,13 +76,13 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
       return item;
     });
 
-  // Enforce Convex role permissions on routes
+  // Enforce Convex role permissions on routes (only after role is known)
   useEffect(() => {
-    if (!user) return;
+    if (!isLoaded || isRoleLoading || !user) return;
     if (!canAccessPath(role, pathname)) {
       router.replace(getDefaultPath(role));
     }
-  }, [user, role, pathname, router]);
+  }, [isLoaded, isRoleLoading, user, role, pathname, router]);
   useEffect(() => {
     if (typeof window !== "undefined") {
       const isDark = document.documentElement.classList.contains("dark");
@@ -107,6 +107,20 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const handleNavClick = () => {
     setMobileMenuOpen(false);
   };
+
+  // Avoid flashing member nav/pages while Convex role is still loading
+  if (!isLoaded || isRoleLoading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50/50 dark:bg-slate-950">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Loading your workspace…
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50/50 dark:bg-slate-950">

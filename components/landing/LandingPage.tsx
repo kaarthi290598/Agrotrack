@@ -1,12 +1,15 @@
 "use client";
 
 import React from "react";
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
+import { RedirectToTasks, SignInButton, SignUpButton } from "@clerk/nextjs";
 import { Tractor, ShieldCheck, Clock, Receipt, IndianRupee, ArrowRight, CheckCircle2, Lock } from "lucide-react";
 
 export const LandingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white">
+      {/* Pending sessions (e.g. choose-organization) are treated as signed-out;
+          send them to the task page instead of leaving them stuck on the landing. */}
+      <RedirectToTasks />
       {/* Standalone Top Navbar */}
       <header className="w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">

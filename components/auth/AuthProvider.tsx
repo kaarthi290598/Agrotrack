@@ -6,10 +6,12 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { UserProfile, UserRole } from "../../types";
 import { getClerkDisplayName } from "../../lib/clerk-user";
+import { setConvexTokenGetter } from "../../lib/convex-client";
 
 interface AuthContextType {
   isSignedIn: boolean;
   isLoaded: boolean;
+  isRoleLoading: boolean;
   user: UserProfile | null;
   orgRole: string | null | undefined;
   signOut: () => void;
@@ -19,6 +21,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   isSignedIn: false,
   isLoaded: false,
+  isRoleLoading: false,
   user: null,
   orgRole: null,
   signOut: () => {},
@@ -33,17 +36,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     isSignedIn: clerkSignedIn,
     user: clerkUser,
   } = useUser();
-  const { orgId, orgRole } = useClerkAuth();
+  const { orgId, orgRole, getToken } = useClerkAuth();
+
+  // Register JWT getter during render so services don't race ahead of useEffect
+  if (clerkSignedIn) {
+    setConvexTokenGetter(async () => {
+      return (await getToken({ template: "convex" })) || (await getToken());
+    });
+  } else {
+    setConvexTokenGetter(null);
+  }
 
   const ensureCurrentUser = useMutation(api.users.ensureCurrentUser);
   const convexUser = useQuery(
     api.users.getCurrentUser,
-    clerkSignedIn && clerkUser && orgId
-      ? { orgId, clerkUserId: clerkUser.id }
-      : "skip"
+    clerkSignedIn && clerkUser && orgId ? {} : "skip"
   );
 
-  // Keep Convex user record in sync whenever the user is in an organization
   useEffect(() => {
     if (!clerkSignedIn || !clerkUser || !orgId) return;
 
@@ -60,23 +69,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }).catch((err) => {
       console.error("Failed to sync Convex user:", err);
     });
-  }, [
-    clerkSignedIn,
-    clerkUser,
-    orgId,
-    orgRole,
-    ensureCurrentUser,
-  ]);
+  }, [clerkSignedIn, clerkUser, orgId, orgRole, ensureCurrentUser]);
 
-  // Convex is the source of truth for application roles.
-  // While syncing, bootstrap from Clerk org role so creators aren't locked out.
+  const waitingOnConvexRole =
+    !!clerkSignedIn &&
+    !!clerkUser &&
+    !!orgId &&
+    (convexUser === undefined ||
+      (convexUser === null && orgRole !== "org:admin"));
+
   let effectiveRole: UserRole | null = null;
   if (convexUser?.role) {
     effectiveRole = convexUser.role;
-  } else if (orgId && orgRole) {
-    effectiveRole = orgRole === "org:admin" ? "ADMIN" : "MEMBER";
+  } else if (
+    clerkSignedIn &&
+    orgId &&
+    convexUser === null &&
+    orgRole === "org:admin"
+  ) {
+    effectiveRole = "ADMIN";
   } else if (clerkSignedIn && !orgId) {
-    // Personal/no-org session — keep previous solo-admin behavior
     effectiveRole = "ADMIN";
   }
 
@@ -91,25 +103,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       : null;
 
-  const switchRole = (_role: UserRole) => {
-    console.log(
-      "Manual role switching disabled. Application roles are managed in Convex."
-    );
-  };
-
-  const signOut = () => {
-    // Handled by Clerk
-  };
-
   return (
     <AuthContext.Provider
       value={{
         isSignedIn: !!clerkSignedIn,
-        isLoaded: clerkLoaded,
+        isLoaded: clerkLoaded && !waitingOnConvexRole,
+        isRoleLoading: waitingOnConvexRole,
         user,
         orgRole: orgRole || null,
-        signOut,
-        switchRole,
+        signOut: () => {},
+        switchRole: () => {
+          console.log(
+            "Manual role switching disabled. Application roles are managed in Convex."
+          );
+        },
       }}
     >
       {children}

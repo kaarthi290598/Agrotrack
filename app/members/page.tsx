@@ -62,31 +62,25 @@ export default function MembersPage() {
 
   const syncOrgMembers = useMutation(api.users.syncOrgMembers);
   const updateRole = useMutation(api.users.updateRole);
-  const createPendingInvite = useMutation(api.users.createPendingInvite);
-  const cancelPendingInvite = useMutation(api.users.cancelPendingInvite);
+  const clearPendingInvites = useMutation(api.users.clearPendingInvites);
 
   const me = useQuery(
     api.users.getCurrentUser,
-    orgId && user?.id ? { orgId, clerkUserId: user.id } : "skip"
+    orgId && user?.id ? {} : "skip"
   );
   const members = useQuery(
     api.users.listByOrg,
-    orgId && user?.id ? { orgId, callerClerkUserId: user.id } : "skip"
-  );
-  const pendingInvites = useQuery(
-    api.users.listPendingInvites,
-    orgId && user?.id ? { orgId, callerClerkUserId: user.id } : "skip"
+    orgId && user?.id ? { orgId } : "skip"
   );
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
-  const [hasAutoSynced, setHasAutoSynced] = useState(false);
+  const [lastAutoSyncKey, setLastAutoSyncKey] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<UserRole>("MEMBER");
-  const [isInviting, setIsInviting] = useState(false);
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberRole, setMemberRole] = useState<UserRole>("MEMBER");
+  const [isAdding, setIsAdding] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<MemberRow | null>(null);
-  const [inviteToDelete, setInviteToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
@@ -99,6 +93,14 @@ export default function MembersPage() {
       router.replace("/billing");
     }
   }, [user, isAdmin, router, toast]);
+
+  // Wipe leftover pending-invite rows from the old invite flow
+  useEffect(() => {
+    if (!orgId || !user?.id || !isAdmin || me?.role !== "ADMIN") return;
+    void clearPendingInvites({
+      orgId,
+    }).catch(() => null);
+  }, [orgId, user?.id, isAdmin, me?.role, clearPendingInvites]);
 
   const handleSync = async () => {
     if (!orgId || !user?.id) return;
@@ -142,7 +144,6 @@ export default function MembersPage() {
     try {
       const result = await syncOrgMembers({
         orgId,
-        callerClerkUserId: user.id,
         prune,
         members: clerkMembers,
       });
@@ -166,20 +167,23 @@ export default function MembersPage() {
   };
 
   useEffect(() => {
-    if (hasAutoSynced) return;
     if (!isAdmin || !orgId || !user?.id) return;
     if (!me || me.role !== "ADMIN") return;
     if (members === undefined) return;
+    if (isSyncing) return;
 
     const clerkCount = memberships?.data?.length ?? 0;
     if (clerkCount === 0) return;
     if (members.length === clerkCount) return;
 
-    setHasAutoSynced(true);
+    // Re-run whenever Clerk and Convex counts diverge (e.g. user deleted in Clerk).
+    const syncKey = `${orgId}:${clerkCount}:${members.length}`;
+    if (lastAutoSyncKey === syncKey) return;
+
+    setLastAutoSyncKey(syncKey);
     void handleSync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    hasAutoSynced,
     isAdmin,
     orgId,
     user?.id,
@@ -187,10 +191,12 @@ export default function MembersPage() {
     me?.role,
     memberships?.data?.length,
     members,
+    isSyncing,
+    lastAutoSyncKey,
   ]);
 
   useEffect(() => {
-    setHasAutoSynced(false);
+    setLastAutoSyncKey(null);
   }, [orgId]);
 
   const handleRoleChange = async (userId: Id<"users">, role: UserRole) => {
@@ -202,7 +208,6 @@ export default function MembersPage() {
         orgId,
         userId,
         role,
-        callerClerkUserId: user.id,
       });
       toast({
         type: "success",
@@ -243,7 +248,9 @@ export default function MembersPage() {
       toast({
         type: "success",
         title: "Member removed",
-        description: `${memberToDelete.fullName} was removed from Clerk and the app.`,
+        description: data.deletedClerkUser
+          ? `${memberToDelete.fullName} was deleted from Clerk and the app.`
+          : `${memberToDelete.fullName} was removed from this organization and the app.`,
       });
       setMemberToDelete(null);
     } catch (error) {
@@ -258,54 +265,16 @@ export default function MembersPage() {
     }
   };
 
-  const handleDeleteInvite = async () => {
-    if (!orgId || !user?.id || !inviteToDelete) return;
-
-    setIsDeleting(true);
-    try {
-      const res = await fetch("/api/org/invite", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId, email: inviteToDelete }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to revoke invitation");
-      }
-
-      await cancelPendingInvite({
-        orgId,
-        email: inviteToDelete,
-        callerClerkUserId: user.id,
-      });
-      toast({
-        type: "success",
-        title: "Invite cancelled",
-        description: `Pending invite for ${inviteToDelete} was removed.`,
-      });
-      setInviteToDelete(null);
-    } catch (error) {
-      toast({
-        type: "error",
-        title: "Cancel failed",
-        description:
-          error instanceof Error ? error.message : "Could not cancel invite.",
-      });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
   const openAddMember = () => {
-    setInviteEmail("");
-    setInviteRole("MEMBER");
+    setMemberEmail("");
+    setMemberRole("MEMBER");
     setIsAddOpen(true);
   };
 
   const handleAddMember = async () => {
     if (!orgId || !user?.id) return;
 
-    const email = inviteEmail.trim().toLowerCase();
+    const email = memberEmail.trim().toLowerCase();
     if (!email.includes("@")) {
       toast({
         type: "error",
@@ -315,65 +284,42 @@ export default function MembersPage() {
       return;
     }
 
-    setIsInviting(true);
+    setIsAdding(true);
     try {
-      await createPendingInvite({
-        orgId,
-        email,
-        role: inviteRole,
-        callerClerkUserId: user.id,
+      const res = await fetch("/api/org/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, orgId, role: memberRole }),
       });
-
-      let redirectUrl = "";
-      try {
-        const res = await fetch("/api/org/invite", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, orgId }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to create invitation");
-        }
-        redirectUrl = data.redirectUrl || "";
-
-        await createPendingInvite({
-          orgId,
-          email,
-          role: inviteRole,
-          callerClerkUserId: user.id,
-          clerkInvitationId: data.id,
-        });
-      } catch (inviteError) {
-        await cancelPendingInvite({
-          orgId,
-          email,
-          callerClerkUserId: user.id,
-        });
-        throw inviteError;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add member");
       }
 
+      memberships?.revalidate?.();
+
+      const assignedRole = (data.role as UserRole) || memberRole;
       toast({
         type: "success",
-        title: "Invitation sent",
-        description: `${email} invited as ${inviteRole}${
-          redirectUrl ? `. Accept link goes to ${redirectUrl}` : ""
-        }.`,
+        title: data.createdUser ? "Member created" : "Member added",
+        description: data.createdUser
+          ? `${email} added as ${assignedRole}. They can sign in at /sign-in and set a password via Forgot password.`
+          : `${email} was added as ${assignedRole}.`,
       });
       setIsAddOpen(false);
-      setInviteEmail("");
-      setInviteRole("MEMBER");
+      setMemberEmail("");
+      setMemberRole("MEMBER");
     } catch (error) {
       toast({
         type: "error",
-        title: "Invite failed",
+        title: "Add member failed",
         description:
           error instanceof Error
             ? error.message
-            : "Could not invite this member.",
+            : "Could not add this member.",
       });
     } finally {
-      setIsInviting(false);
+      setIsAdding(false);
     }
   };
 
@@ -390,7 +336,7 @@ export default function MembersPage() {
             Members
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Invite members and manage their application roles.
+            Add members by email and manage their application roles.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -417,15 +363,16 @@ export default function MembersPage() {
         <CardHeader>
           <CardTitle className="text-base">Organization members</CardTitle>
           <CardDescription>
-            Application roles are stored in Convex. New invites always use Clerk{" "}
-            <code className="text-xs">org:member</code>.
+            Application roles (Admin / Supervisor / Member) are stored in Convex.
+            Clerk always uses <code className="text-xs">org:member</code> for
+            added users — that is expected and separate from the app role.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {members.length === 0 ? (
             <div className="px-6 py-10 text-center space-y-3">
               <p className="text-sm text-slate-500">
-                No members yet. Invite someone to get started.
+                No members yet. Add someone to get started.
               </p>
               <Button type="button" onClick={openAddMember} className="gap-2">
                 <Plus className="h-4 w-4" />
@@ -521,61 +468,15 @@ export default function MembersPage() {
         </CardContent>
       </Card>
 
-      {(pendingInvites?.length ?? 0) > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Pending invites</CardTitle>
-            <CardDescription>
-              These roles apply when the invitee accepts and joins.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Email</TableHead>
-                    <TableHead>App role</TableHead>
-                    <TableHead className="w-16 text-right"> </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pendingInvites!.map((invite) => (
-                    <TableRow key={invite._id}>
-                      <TableCell>{invite.email}</TableCell>
-                      <TableCell>
-                        <span className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                          {invite.role}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <button
-                          type="button"
-                          title="Cancel invite"
-                          onClick={() => setInviteToDelete(invite.email)}
-                          className="inline-flex p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       <Dialog
         isOpen={isAddOpen}
-        onClose={() => !isInviting && setIsAddOpen(false)}
+        onClose={() => !isAdding && setIsAddOpen(false)}
         title="Add Member"
         footer={
           <>
             <Button
               variant="outline"
-              disabled={isInviting}
+              disabled={isAdding}
               onClick={() => setIsAddOpen(false)}
               className="cursor-pointer"
             >
@@ -583,11 +484,11 @@ export default function MembersPage() {
             </Button>
             <Button
               variant="primary"
-              isLoading={isInviting}
+              isLoading={isAdding}
               onClick={handleAddMember}
               className="cursor-pointer"
             >
-              Send Invite
+              Create Member
             </Button>
           </>
         }
@@ -596,17 +497,25 @@ export default function MembersPage() {
           <Input
             label="Email address"
             type="email"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
+            value={memberEmail}
+            onChange={(e) => setMemberEmail(e.target.value)}
             placeholder="member@example.com"
             autoFocus
           />
           <Select
+            key={`role-${isAddOpen}-${memberRole}`}
             label="Application role"
             options={ROLE_OPTIONS}
-            value={inviteRole}
-            onChange={(e) => setInviteRole(e.target.value as UserRole)}
+            value={memberRole}
+            onChange={(e) => setMemberRole(e.target.value as UserRole)}
           />
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Creates their account with the selected app role (
+            <span className="font-semibold">{memberRole}</span>
+            ). Clerk org role stays <span className="font-medium">org:member</span>.
+            They sign in at <span className="font-medium">/sign-in</span> and set
+            a password via Forgot password.
+          </p>
         </div>
       </Dialog>
 
@@ -637,39 +546,9 @@ export default function MembersPage() {
       >
         <p className="text-sm text-slate-600 dark:text-slate-300">
           Remove <strong>{memberToDelete?.fullName}</strong> (
-          {memberToDelete?.email}) from this organization? Their Convex role
-          record will be deleted and they will lose org access.
-        </p>
-      </Dialog>
-
-      <Dialog
-        isOpen={!!inviteToDelete}
-        onClose={() => !isDeleting && setInviteToDelete(null)}
-        title="Cancel invite"
-        footer={
-          <>
-            <Button
-              variant="outline"
-              disabled={isDeleting}
-              onClick={() => setInviteToDelete(null)}
-              className="cursor-pointer"
-            >
-              Keep
-            </Button>
-            <Button
-              variant="destructive"
-              isLoading={isDeleting}
-              onClick={handleDeleteInvite}
-              className="cursor-pointer"
-            >
-              Cancel invite
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          Cancel the pending invite for <strong>{inviteToDelete}</strong>? The
-          stored application role will be discarded.
+          {memberToDelete?.email}) from this organization? Their app record will
+          be deleted, and their Clerk account will be deleted if they do not
+          belong to any other organization.
         </p>
       </Dialog>
     </div>

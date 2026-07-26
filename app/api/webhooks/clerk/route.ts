@@ -71,10 +71,13 @@ export async function POST(req: NextRequest) {
     // Deleting a user in Clerk does not always emit a membership.deleted event,
     // so clear the user from every organization here.
     if (evt.type === "user.deleted") {
-      if (evt.data.id) {
+      const deletedId =
+        (evt.data as { id?: string }).id ||
+        (evt.data as { user_id?: string }).user_id;
+      if (deletedId) {
         await client.mutation(api.users.removeAllForClerkUser, {
           secret,
-          clerkUserId: evt.data.id,
+          clerkUserId: deletedId,
         });
       }
     }
