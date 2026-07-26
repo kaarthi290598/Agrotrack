@@ -690,11 +690,11 @@ export const updateRole = mutation({
       throw new Error("User not found in this organization");
     }
 
-    const isSelf = target.clerkUserId === caller.clerkUserId;
+    if (target.clerkUserId === caller.clerkUserId) {
+      throw new Error("You cannot change your own role");
+    }
 
-    // Demoting someone else from ADMIN is blocked when they are the last one.
-    // Admins may change their own role freely (including leaving ADMIN).
-    if (!isSelf && target.role === "ADMIN" && args.role !== "ADMIN") {
+    if (target.role === "ADMIN" && args.role !== "ADMIN") {
       const members = await ctx.db
         .query("users")
         .withIndex("by_org", (q) => q.eq("orgId", args.orgId))

@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth as useClerkAuth, useOrganization } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../components/auth/AuthProvider";
-import { UserRole, canManageMembers, getDefaultPath } from "../../types";
+import { UserRole, canManageMembers } from "../../types";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -84,30 +84,16 @@ export default function MembersPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<MemberRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  /** True after an admin successfully changes their own role away from ADMIN. */
-  const selfDemotedRef = useRef(false);
-  const hadAdminAccessRef = useRef(false);
 
   useEffect(() => {
-    if (isAdmin) hadAdminAccessRef.current = true;
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!user || isAdmin) return;
-
-    // Changing your own role off ADMIN is allowed — leave quietly, no error toast.
-    if (selfDemotedRef.current || hadAdminAccessRef.current) {
-      selfDemotedRef.current = false;
-      router.replace(getDefaultPath(user.role));
-      return;
+    if (user && !isAdmin) {
+      toast({
+        type: "error",
+        title: "Access Denied",
+        description: "Member role management is restricted to Admin users.",
+      });
+      router.replace("/billing");
     }
-
-    toast({
-      type: "error",
-      title: "Access Denied",
-      description: "Member role management is restricted to Admin users.",
-    });
-    router.replace("/billing");
   }, [user, isAdmin, router, toast]);
 
   // Wipe leftover pending-invite rows from the old invite flow
@@ -221,24 +207,8 @@ export default function MembersPage() {
     setLastAutoSyncKey(null);
   }, [orgId]);
 
-  const handleRoleChange = async (
-    userId: Id<"users">,
-    role: UserRole,
-    memberClerkUserId: string
-  ) => {
+  const handleRoleChange = async (userId: Id<"users">, role: UserRole) => {
     if (!orgId || !user?.id) return;
-
-    const isSelf = memberClerkUserId === user.id;
-    if (
-      isSelf &&
-      me?.role === "ADMIN" &&
-      role !== "ADMIN" &&
-      !window.confirm(
-        `Change your own role to ${role}? You will lose access to Members and Settings.`
-      )
-    ) {
-      return;
-    }
 
     setUpdatingUserId(userId);
     try {
@@ -247,15 +217,10 @@ export default function MembersPage() {
         userId,
         role,
       });
-      if (isSelf && role !== "ADMIN") {
-        selfDemotedRef.current = true;
-      }
       toast({
         type: "success",
         title: "Role updated",
-        description: isSelf
-          ? `Your application role is now ${role}.`
-          : `Application role set to ${role}.`,
+        description: `Application role set to ${role}.`,
       });
     } catch (error) {
       toast({
@@ -475,17 +440,19 @@ export default function MembersPage() {
                         <Select
                           options={ROLE_OPTIONS}
                           value={member.role}
-                          disabled={updatingUserId === member._id}
+                          disabled={
+                            updatingUserId === member._id ||
+                            member.clerkUserId === user.id
+                          }
                           title={
                             member.clerkUserId === user.id
-                              ? "You can change your own application role"
+                              ? "You cannot change your own role"
                               : undefined
                           }
                           onChange={(e) =>
                             handleRoleChange(
                               member._id,
-                              e.target.value as UserRole,
-                              member.clerkUserId
+                              e.target.value as UserRole
                             )
                           }
                         />
