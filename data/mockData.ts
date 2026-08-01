@@ -7,10 +7,16 @@ export const defaultSettings: Settings = {
   phoneNumber: "",
   gstNumber: "",
   invoicePrefix: "INV-",
+  nextInvoiceNumber: 1,
+  invoiceNumberDigits: 5,
+  highestUsedInvoiceNumber: 0,
+  latestInvoiceNumber: null,
   currencySymbol: "₹",
   defaultTax: 0,
   invoiceNotes: "",
-  footerText: ""
+  footerText: "",
+  hsnCode: "",
+  logoUrl: null,
 };
 
 export const mockCustomers: Customer[] = [
@@ -70,8 +76,6 @@ export const generateMockBills = (customers: Customer[]): Bill[] => {
     const discount = i % 4 === 0 ? 100 : i % 10 === 0 ? 300 : 0;
     const grandTotal = usageCost + chargesTotal - discount;
     
-    const invoiceNumber = `INV-${String(i).padStart(5, "0")}`;
-    
     // Status mix: recent ones pending, one rejected, rest approved
     let status: "APPROVED" | "PENDING_APPROVAL" | "REJECTED" | "IN_PROGRESS" = "APPROVED";
     if (i === 50) {
@@ -83,11 +87,15 @@ export const generateMockBills = (customers: Customer[]): Bill[] => {
     }
 
     const paymentStatus: "PAID" | "UNPAID" = status === "IN_PROGRESS" ? "UNPAID" : i % 2 === 0 ? "PAID" : "UNPAID";
+    // Invoice numbers only for paid bills (paid-only sequence)
+    const invoiceNumber =
+      paymentStatus === "PAID" ? `INV-${String(i).padStart(5, "0")}` : undefined;
 
     const isOperatorBill = i % 2 === 0 || status === "IN_PROGRESS";
     bills.push({
       id: `bill-${i}`,
       invoiceNumber,
+      ertNumber: `ERT-${String(i).padStart(4, "0")}`,
       customerId: customer.id,
       date: dateString,
       startTime: status === "IN_PROGRESS" ? "08:30" : "09:00",
@@ -99,6 +107,8 @@ export const generateMockBills = (customers: Customer[]): Bill[] => {
       grandTotal: status === "IN_PROGRESS" ? 0 : grandTotal,
       status,
       paymentStatus,
+      paymentMode:
+        paymentStatus === "PAID" ? (i % 4 === 0 ? "ONLINE" : "CASH") : undefined,
       createdBy: isOperatorBill ? "Operator" : "Admin Manager",
       createdByEmail: isOperatorBill ? "operator@demo.com" : "admin@demo.com",
       createdAt: dateObj.getTime()

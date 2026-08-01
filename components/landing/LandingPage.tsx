@@ -4,6 +4,7 @@ import React from "react";
 import { SignIn, SignInButton, SignOutButton, Show } from "@clerk/nextjs";
 import { Clock, Receipt, BarChart3 } from "lucide-react";
 import Image from "next/image";
+import { hideSignUpElements } from "../../lib/clerk-appearance";
 
 export const LandingPage: React.FC = () => {
   return (
@@ -84,7 +85,10 @@ export const LandingPage: React.FC = () => {
       <div className="hidden lg:flex w-1/2 flex-col justify-center items-center p-12 bg-white dark:bg-slate-900 relative z-10 min-h-screen min-h-[100dvh]">
         <div className="w-full flex items-center justify-center">
           <Show when="signed-out">
-            <SignIn routing="hash" />
+            <SignIn
+              routing="hash"
+              appearance={{ elements: hideSignUpElements }}
+            />
           </Show>
           <Show when="signed-in">
             <div className="text-center space-y-4">

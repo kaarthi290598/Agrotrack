@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { customerService } from "../../services/customer.service";
 import { billingService } from "../../services/billing.service";
-import { Customer, Bill, hasElevatedAccess } from "../../types";
+import { Customer, Bill, isAppAdmin, hasElevatedAccess } from "../../types";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -39,7 +39,7 @@ type CustomerFormValues = z.infer<typeof customerSchema>;
 export default function CustomersPage() {
   const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
   const { user } = useAuth();
-  const isAdmin = hasElevatedAccess(user?.role);
+  const isAdmin = isAppAdmin(user?.role);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [allBills, setAllBills] = useState<Bill[]>([]);
@@ -218,6 +218,14 @@ export default function CustomersPage() {
 
   // Delete click
   const handleDeleteClick = (customer: Customer) => {
+    if (!isAdmin) {
+      toast({
+        type: "error",
+        title: "Access Denied",
+        description: "Only Administrators can delete customers."
+      });
+      return;
+    }
     setSelectedCustomer(customer);
     setIsDeleteOpen(true);
   };
@@ -225,6 +233,14 @@ export default function CustomersPage() {
   // Delete handler
   const handleDeleteConfirm = async () => {
     if (!selectedCustomer) return;
+    if (!isAdmin) {
+      toast({
+        type: "error",
+        title: "Access Denied",
+        description: "Only Administrators can delete customers."
+      });
+      return;
+    }
     const deletedId = selectedCustomer.id;
     try {
       await customerService.delete(deletedId);
@@ -347,13 +363,15 @@ export default function CustomersPage() {
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteClick(cust)}
-                          className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-                          title="Delete Customer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteClick(cust)}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
+                            title="Delete Customer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -428,13 +446,15 @@ export default function CustomersPage() {
                             >
                               <Edit2 className="h-4 w-4" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteClick(cust)}
-                              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                              title="Delete Customer"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleDeleteClick(cust)}
+                                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-red-600 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                title="Delete Customer"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -672,7 +692,9 @@ export default function CustomersPage() {
                   <TableBody>
                     {customerBills.map((bill) => (
                       <TableRow key={bill.id}>
-                        <TableCell className={TABLE.invoice}>{bill.invoiceNumber}</TableCell>
+                        <TableCell className={TABLE.invoice}>
+                          {bill.invoiceNumber || bill.ertNumber || "Pending"}
+                        </TableCell>
                         <TableCell className={TABLE.muted}>{bill.date}</TableCell>
                         <TableCell className={TABLE.muted}>{bill.hoursUsed} hr</TableCell>
                         <TableCell className={TABLE.moneyRight}>₹{bill.grandTotal}</TableCell>

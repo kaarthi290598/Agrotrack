@@ -9,7 +9,7 @@ import * as z from "zod";
 import { customerService } from "../../services/customer.service";
 import { billingService } from "../../services/billing.service";
 import { settingsService } from "../../services/settings.service";
-import { Customer, Bill, AdditionalCharge, Settings, BillStatus, hasElevatedAccess } from "../../types";
+import { Customer, Bill, AdditionalCharge, Settings, BillStatus, PaymentMode, hasElevatedAccess } from "../../types";
 import { customerSnapshotFromCustomer, resolveBillCustomer } from "../../lib/bill-customer";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
@@ -24,7 +24,10 @@ import { isBillCreatedByUser } from "../../lib/utils";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { BillingPageSkeleton } from "../../components/skeletons/PageSkeletons";
 import { downloadInvoicePdf } from "../../lib/invoice-pdf";
-import { PdfPaymentBadge } from "../../components/bills/PdfPaymentBadge";
+import {
+  InvoicePrintArea,
+  InvoicePreviewContent,
+} from "../../components/bills/InvoiceDocument";
 import { 
   Plus, 
   Search, 
@@ -93,7 +96,9 @@ function BillingFormInner() {
   const [discount, setDiscount] = useState<string>("0");
   const [additionalCharges, setAdditionalCharges] = useState<AdditionalCharge[]>([]);
   const [paymentStatus, setPaymentStatus] = useState<"PAID" | "UNPAID" | "PARTIAL_PAID">("UNPAID");
+  const [paymentMode, setPaymentMode] = useState<PaymentMode | "">("");
   const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
+  const [ertNumber, setErtNumber] = useState<string>("");
   
   // Custom Charge Input States
   const [chargeName, setChargeName] = useState("");
@@ -154,8 +159,9 @@ function BillingFormInner() {
           const foundBill = billsData.find((b) => b.id === editBillId);
           if (foundBill) {
             setEditingBillId(foundBill.id);
-            setEditingInvoiceNum(foundBill.invoiceNumber);
+            setEditingInvoiceNum(foundBill.invoiceNumber || "");
             setEditingBillStatus(foundBill.status);
+            setErtNumber(foundBill.ertNumber || "");
             setSelectedCustomerId(foundBill.customerId);
             const foundCust = customerData.find((c) => c.id === foundBill.customerId);
             if (foundCust) {
@@ -170,6 +176,7 @@ function BillingFormInner() {
             setDiscount(foundBill.discount.toString());
             setAdditionalCharges(foundBill.extraCharges || []);
             setPaymentStatus(foundBill.paymentStatus || "UNPAID");
+            setPaymentMode(foundBill.paymentMode || "");
             if (foundBill.amountPaid !== undefined) {
               setPartialPaidAmount(String(foundBill.amountPaid));
             }
@@ -371,6 +378,37 @@ function BillingFormInner() {
     }
   };
 
+  const validateErtNumber = (): string | null => {
+    const trimmed = ertNumber.trim().toUpperCase();
+    if (!trimmed) {
+      toast({ type: "error", title: "Validation Error", description: "ERT Number is required." });
+      return null;
+    }
+    if (!/^[A-Za-z0-9-]+$/.test(trimmed)) {
+      toast({
+        type: "error",
+        title: "Validation Error",
+        description: "ERT Number may only contain letters, digits, and dashes.",
+      });
+      return null;
+    }
+    const duplicate = bills.some(
+      (b) =>
+        b.ertNumber &&
+        b.ertNumber.toLowerCase() === trimmed.toLowerCase() &&
+        b.id !== editingBillId
+    );
+    if (duplicate) {
+      toast({
+        type: "error",
+        title: "Validation Error",
+        description: `ERT Number "${trimmed}" is already used on another bill.`,
+      });
+      return null;
+    }
+    return trimmed;
+  };
+
   // Save Check-In Session
   const handleSaveCheckIn = async () => {
     if (!selectedCustomerId) {
@@ -381,6 +419,8 @@ function BillingFormInner() {
       toast({ type: "error", title: "Validation Error", description: "Please select a Start Time to check in." });
       return;
     }
+    const validErt = validateErtNumber();
+    if (!validErt) return;
 
     setIsGenerating(true);
     try {
@@ -397,6 +437,7 @@ function BillingFormInner() {
         extraCharges: [],
         discount: 0,
         grandTotal: 0,
+        ertNumber: validErt,
         status: "IN_PROGRESS",
         paymentStatus: "UNPAID",
         createdBy: user?.fullName || user?.primaryEmailAddress || "Operator",
@@ -436,8 +477,9 @@ function BillingFormInner() {
     }
 
     setEditingBillId(bill.id);
-    setEditingInvoiceNum(bill.invoiceNumber);
+    setEditingInvoiceNum(bill.invoiceNumber || "");
     setEditingBillStatus(bill.status);
+    setErtNumber(bill.ertNumber || "");
     setActiveTab("express");
 
     toast({
@@ -454,6 +496,9 @@ function BillingFormInner() {
       return;
     }
 
+    const validErt = validateErtNumber();
+    if (!validErt) return;
+
     if (hoursNum <= 0 || isNaN(hoursNum)) {
       toast({ type: "error", title: "Validation Error", description: "Select Start & End time or duration preset to calculate hours." });
       return;
@@ -467,6 +512,10 @@ function BillingFormInner() {
     const parsedPartialPaid = parseFloat(partialPaidAmount) || 0;
     if (paymentStatus === "PARTIAL_PAID" && (parsedPartialPaid < 0 || parsedPartialPaid > grandTotal)) {
       toast({ type: "error", title: "Validation Error", description: "Partial paid amount must be between 0 and bill grand total." });
+      return;
+    }
+    if (paymentStatus === "PAID" && !paymentMode) {
+      toast({ type: "error", title: "Validation Error", description: "Select Cash or Online as the Payment Mode." });
       return;
     }
 
@@ -492,25 +541,30 @@ function BillingFormInner() {
           extraCharges: additionalCharges,
           discount: discountVal,
           grandTotal,
+          ertNumber: validErt,
           status: initialStatus,
           paymentStatus,
+          paymentMode: paymentMode || undefined,
           amountPaid: calculatedAmountPaid,
           balanceAmount: calculatedBalance
         });
 
-        if (paymentStatus === "PAID") {
+        if (paymentStatus === "PAID" && updatedBill.invoiceNumber) {
           setGeneratedInvoice({
             ...updatedBill,
             ...resolveBillCustomer(updatedBill, new Map(customers.map((c) => [c.id, c]))),
           });
         }
 
+        const label = updatedBill.invoiceNumber
+          ? `Invoice ${updatedBill.invoiceNumber}`
+          : `ERT ${validErt}`;
         toast({
           type: "success",
           title: paymentStatus === "PAID"
             ? (isAdmin ? "Invoice Completed & Approved" : "Invoice Completed (Pending Approval)")
             : "Bill Updated Successfully",
-          description: `Bill ${updatedBill.invoiceNumber} saved.`
+          description: `${label} saved.`
         });
 
         setEditingBillId(null);
@@ -533,15 +587,17 @@ function BillingFormInner() {
         extraCharges: additionalCharges,
         discount: discountVal,
         grandTotal,
+        ertNumber: validErt,
         status: initialStatus,
         paymentStatus,
+        paymentMode: paymentMode || undefined,
         amountPaid: calculatedAmountPaid,
         balanceAmount: calculatedBalance,
         createdBy: user?.fullName || user?.primaryEmailAddress || "Operator",
         createdByEmail: user?.primaryEmailAddress || ""
       }, orgId || undefined);
 
-      if (paymentStatus === "PAID") {
+      if (paymentStatus === "PAID" && newBill.invoiceNumber) {
         setGeneratedInvoice({
           ...newBill,
           ...resolveBillCustomer(newBill, new Map(customers.map((c) => [c.id, c]))),
@@ -550,12 +606,14 @@ function BillingFormInner() {
       
       toast({
         type: "success",
-        title: paymentStatus === "PAID"
+        title: paymentStatus === "PAID" && newBill.invoiceNumber
           ? (isAdmin ? "Invoice Created & Approved" : "Invoice Created (Pending Approval)")
           : "Bill Saved Successfully",
-        description: paymentStatus === "PAID"
-          ? (isAdmin ? `Invoice ${newBill.invoiceNumber} logged & approved!` : `Invoice ${newBill.invoiceNumber} submitted for Admin approval.`)
-          : `Bill ${newBill.invoiceNumber} recorded (${paymentStatus === "PARTIAL_PAID" ? "Partial Paid" : "Unpaid"}).`
+        description: paymentStatus === "PAID" && newBill.invoiceNumber
+          ? (isAdmin
+              ? `Invoice ${newBill.invoiceNumber} logged & approved!`
+              : `Invoice ${newBill.invoiceNumber} submitted for Admin approval.`)
+          : `Bill ERT ${validErt} recorded (${paymentStatus === "PARTIAL_PAID" ? "Partial Paid" : "Unpaid"}). Invoice assigned when Fully Paid.`,
       });
 
       fetchBills();
@@ -577,7 +635,9 @@ function BillingFormInner() {
     setDiscount("0");
     setAdditionalCharges([]);
     setPaymentStatus("UNPAID");
+    setPaymentMode("");
     setPartialPaidAmount("");
+    setErtNumber("");
     setEditingBillId(null);
     setEditingInvoiceNum("");
     setEditingBillStatus(null);
@@ -631,6 +691,14 @@ function BillingFormInner() {
 
   const handlePrint = async () => {
     if (!generatedInvoice) return;
+    if (!generatedInvoice.invoiceNumber) {
+      toast({
+        type: "error",
+        title: "Invoice Pending",
+        description: "PDF download is available after the bill is Fully Paid and an invoice number is assigned.",
+      });
+      return;
+    }
     setIsExportingPdf(true);
     try {
       await downloadInvoicePdf(generatedInvoice.invoiceNumber);
@@ -661,90 +729,13 @@ function BillingFormInner() {
 
   return (
     <div className="space-y-6 pb-20 md:pb-6">
-      {/* Printable Invoice Container for Print Modal */}
+      {/* Shared print target — same Tax Invoice layout as Bills / Reports */}
       {generatedInvoice && settings && (
-        <div id="print-area" className="hidden print:block print:p-8 bg-white text-black font-sans text-xs w-[210mm] min-h-[297mm]">
-          <div className="border-b-2 border-slate-350 pb-6 flex items-start justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight uppercase leading-none">{settings.businessName}</h1>
-              <p className="text-[11px] text-slate-600 mt-1">{settings.businessAddress}</p>
-              <p className="text-[11px] text-slate-600">Contact: {settings.phoneNumber}</p>
-            </div>
-            <div className="text-right">
-              <span className="inline-block px-3 py-1 bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded">
-                Tax Invoice
-              </span>
-              <p className="font-mono font-bold text-sm text-slate-900 mt-2">{generatedInvoice.invoiceNumber}</p>
-              <p className="text-[10px] text-slate-500">{generatedInvoice.date}</p>
-              <PdfPaymentBadge status={generatedInvoice.paymentStatus} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6 my-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Billed To (Farmer)</span>
-              <p className="font-bold text-slate-800 text-sm mt-1">{generatedInvoice.customerName}</p>
-              <p className="text-slate-600 mt-0.5">Mobile: {generatedInvoice.customerMobile}</p>
-              {generatedInvoice.customerLocation && (
-                <p className="text-slate-600 mt-0.5">Location: {generatedInvoice.customerLocation}{generatedInvoice.customerState ? `, ${generatedInvoice.customerState}` : ''}</p>
-              )}
-            </div>
-            <div className="text-right flex flex-col justify-end">
-              <p className="text-[10px] text-slate-600">Hourly Rate: {currencySymbol}{generatedInvoice.hourlyRate} / hour</p>
-              <p className="text-[10px] text-slate-600">Duration: {generatedInvoice.hoursUsed} hrs</p>
-            </div>
-          </div>
-
-          <table className="w-full text-left border-collapse border border-slate-200 mt-6">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                <th className="p-2">Description</th>
-                <th className="p-2 text-center">Hours / Units</th>
-                <th className="p-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-slate-150">
-                <td className="p-2">
-                  <p className="font-semibold">Machine Rental Usage</p>
-                  <span className="text-[10px] text-slate-450">Tillage / Harvesting hourly service</span>
-                </td>
-                <td className="p-2 text-center">{generatedInvoice.hoursUsed} hr × {currencySymbol}{generatedInvoice.hourlyRate}</td>
-                <td className="p-2 text-right font-semibold">{currencySymbol}{generatedInvoice.hoursUsed * generatedInvoice.hourlyRate}</td>
-              </tr>
-              {generatedInvoice.extraCharges.map((chg) => (
-                <tr key={chg.id} className="border-b border-slate-150">
-                  <td className="p-2 font-medium">{chg.name}</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-right font-semibold">+{currencySymbol}{chg.amount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="flex justify-between items-start mt-6 border-t pt-4">
-            <div className="text-[10px] text-slate-500 space-y-1">
-              <PdfPaymentBadge status={generatedInvoice.paymentStatus} />
-              <p>Issued By: {generatedInvoice.createdBy}</p>
-            </div>
-            <div className="text-right space-y-1">
-              <div className="flex justify-between gap-8 text-xs">
-                <span>Subtotal:</span>
-                <span>{currencySymbol}{usageCost + extraChargesCost}</span>
-              </div>
-              {generatedInvoice.discount > 0 && (
-                <div className="flex justify-between gap-8 text-xs text-red-600">
-                  <span>Discount:</span>
-                  <span>-{currencySymbol}{generatedInvoice.discount}</span>
-                </div>
-              )}
-              <div className="flex justify-between gap-8 text-sm font-bold pt-1 border-t">
-                <span>Grand Total:</span>
-                <span className="text-emerald-700">{currencySymbol}{generatedInvoice.grandTotal}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <InvoicePrintArea
+          bill={generatedInvoice}
+          settings={settings}
+          currencySymbol={currencySymbol}
+        />
       )}
 
       {/* Header Banner & Workflow Tabs */}
@@ -800,7 +791,9 @@ function BillingFormInner() {
           <div className="flex items-center gap-2 min-w-0">
             <Edit3 className="h-4 w-4 text-amber-600 shrink-0" />
             <span className="min-w-0">
-              Editing Invoice <strong>#{editingInvoiceNum}</strong>
+              {editingInvoiceNum
+                ? <>Editing Invoice <strong>#{editingInvoiceNum}</strong></>
+                : <>Editing bill{ertNumber ? <> (ERT <strong>{ertNumber}</strong>)</> : null} — invoice pending until Fully Paid</>}
               {editingBillStatus === "PENDING_APPROVAL" && (
                 <span className="ml-2 inline-flex items-center rounded bg-amber-200/80 dark:bg-amber-900/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 dark:text-amber-200">
                   Pending Approval
@@ -956,6 +949,13 @@ function BillingFormInner() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                <Input
+                  label="ERT Number (Estimated Running Cost) *"
+                  value={ertNumber}
+                  onChange={(e) => setErtNumber(e.target.value.toUpperCase())}
+                  placeholder="e.g. ERT-123"
+                  className="font-mono"
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                   <DatePicker
                     label="Billing Date *"
@@ -1112,7 +1112,10 @@ function BillingFormInner() {
                   <div className="grid grid-cols-3 gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setPaymentStatus("UNPAID")}
+                      onClick={() => {
+                        setPaymentStatus("UNPAID");
+                        setPaymentMode("");
+                      }}
                       className={`py-2 px-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
                         paymentStatus === "UNPAID"
                           ? "bg-amber-50 border-amber-300 text-amber-900 dark:bg-amber-950/60 dark:border-amber-700 dark:text-amber-200 shadow-xs"
@@ -1125,6 +1128,7 @@ function BillingFormInner() {
                       type="button"
                       onClick={() => {
                         setPaymentStatus("PARTIAL_PAID");
+                        setPaymentMode("");
                         if (!partialPaidAmount && grandTotal > 0) {
                           setPartialPaidAmount(String(Math.round(grandTotal / 2)));
                         }
@@ -1178,6 +1182,30 @@ function BillingFormInner() {
                           </span>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {paymentStatus === "PAID" && (
+                    <div className="space-y-1.5 pt-2 animate-in fade-in duration-200">
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Payment Mode *
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["CASH", "ONLINE"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setPaymentMode(mode)}
+                            className={`rounded-xl border px-3 py-2 text-xs font-bold transition-all cursor-pointer ${
+                              paymentMode === mode
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-900 shadow-xs dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+                                : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                            }`}
+                          >
+                            {mode === "CASH" ? "Cash" : "Online"}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1297,7 +1325,7 @@ function BillingFormInner() {
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-blue-600 animate-spin" />
                           <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">
-                            {session.invoiceNumber}
+                            {session.ertNumber || session.invoiceNumber || "Session"}
                           </span>
                         </div>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/80 dark:text-blue-200">
@@ -1504,42 +1532,20 @@ function BillingFormInner() {
           </>
         }
       >
-        {generatedInvoice && (
+        {generatedInvoice && settings && (
           <div className="space-y-4">
             <div className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-900/50 dark:text-emerald-300">
-              Invoice <strong>{generatedInvoice.invoiceNumber}</strong> saved to system records! Click <strong>Download PDF</strong> to save a clean invoice file.
+              {generatedInvoice.invoiceNumber ? (
+                <>Invoice <strong>{generatedInvoice.invoiceNumber}</strong> saved to system records! Click <strong>Download PDF</strong> to save a clean invoice file.</>
+              ) : (
+                <>Bill saved (ERT <strong>{generatedInvoice.ertNumber}</strong>). Invoice number is assigned when Fully Paid.</>
+              )}
             </div>
-
-            <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono text-[11px] space-y-3 shadow-inner max-h-[50vh] overflow-y-auto">
-              <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
-                <div>
-                  <h3 className="font-bold text-xs text-emerald-600">{settings.businessName}</h3>
-                  <p className="text-[10px] text-slate-500">{settings.businessAddress}</p>
-                </div>
-                <div className="text-right">
-                  <h4 className="font-bold text-xs uppercase text-slate-400">Invoice</h4>
-                  <p className="font-bold">{generatedInvoice.invoiceNumber}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-[10px]">
-                <div>
-                  <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Farmer</span>
-                  <p className="font-bold">{generatedInvoice.customerName}</p>
-                  <p>Mobile: {generatedInvoice.customerMobile}</p>
-                </div>
-                <div className="text-right">
-                  <p>Rent: {currencySymbol}{generatedInvoice.hourlyRate}/hr</p>
-                  <p>Duration: {generatedInvoice.hoursUsed} hrs</p>
-                  <p>Date: {generatedInvoice.date}</p>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800 font-extrabold text-xs">
-                <span>Grand Total:</span>
-                <span className="text-emerald-600">{currencySymbol}{generatedInvoice.grandTotal}</span>
-              </div>
-            </div>
+            <InvoicePreviewContent
+              bill={generatedInvoice}
+              settings={settings}
+              currencySymbol={currencySymbol}
+            />
           </div>
         )}
       </Dialog>

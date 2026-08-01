@@ -3,6 +3,12 @@
 import React from "react";
 import { Bill, Settings } from "../../types";
 import { PdfPaymentBadge } from "./PdfPaymentBadge";
+import { amountInWords } from "../../lib/amount-in-words";
+import {
+  computeInvoiceTax,
+  formatInvoiceDate,
+  formatInvoiceMoney,
+} from "../../lib/invoice-tax";
 
 export type InvoiceBillView = Bill & {
   customerName?: string;
@@ -17,6 +23,271 @@ type InvoiceDocumentProps = {
   currencySymbol: string;
 };
 
+function customerAddress(bill: InvoiceBillView): string {
+  return [bill.customerLocation, bill.customerState].filter(Boolean).join(", ");
+}
+
+function InvoiceBody({
+  bill,
+  settings,
+  currencySymbol,
+  compact = false,
+}: InvoiceDocumentProps & { compact?: boolean }) {
+  const tax = computeInvoiceTax(bill.grandTotal, settings.defaultTax);
+  const hsn = settings.hsnCode?.trim() || "-";
+  const taxLabel =
+    tax.taxRate > 0 ? `${tax.taxRate % 1 === 0 ? tax.taxRate : tax.taxRate.toFixed(2)}%` : "-";
+  const money = (n: number) => formatInvoiceMoney(n, currencySymbol);
+  const usageAmount = bill.hoursUsed * bill.hourlyRate;
+  const lineNoStart = 1;
+
+  return (
+    <div className={compact ? "space-y-4 text-[11px]" : "space-y-5 text-xs"}>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex items-start gap-3 min-w-0">
+          {settings.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={settings.logoUrl}
+              alt=""
+              crossOrigin="anonymous"
+              className={
+                compact
+                  ? "h-20 w-20 object-contain shrink-0"
+                  : "h-28 w-28 object-contain shrink-0"
+              }
+            />
+          )}
+          <div className="min-w-0">
+            <h1
+              className={`font-bold text-slate-900 uppercase tracking-tight leading-tight ${
+                compact ? "text-sm" : "text-lg"
+              }`}
+            >
+              {settings.businessName}
+            </h1>
+            {settings.businessAddress && (
+              <p className="text-[10px] text-slate-600 mt-1 whitespace-pre-line max-w-xs leading-snug">
+                {settings.businessAddress}
+              </p>
+            )}
+            {settings.phoneNumber && (
+              <p className="text-[10px] text-slate-600 mt-0.5">
+                Phone: {settings.phoneNumber}
+              </p>
+            )}
+            {settings.gstNumber && (
+              <p className="text-[10px] text-slate-800 font-semibold mt-0.5">
+                GSTIN: {settings.gstNumber}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="shrink-0 text-right w-44">
+          <h2
+            className={`font-bold text-emerald-700 uppercase tracking-wide ${
+              compact ? "text-sm" : "text-base"
+            }`}
+          >
+            Tax Invoice
+          </h2>
+          <div className="mt-2 border border-slate-300 text-[10px]">
+            <div className="flex justify-between gap-2 border-b border-slate-200 px-2 py-1.5">
+              <span className="font-bold text-slate-700">Invoice No</span>
+              <span className="font-semibold text-slate-900">
+                {bill.invoiceNumber || "Pending"}
+              </span>
+            </div>
+            <div className="flex justify-between gap-2 px-2 py-1.5">
+              <span className="font-bold text-slate-700">Date</span>
+              <span className="text-slate-900">{formatInvoiceDate(bill.date)}</span>
+            </div>
+          </div>
+          <div className="mt-2 flex justify-end">
+            <PdfPaymentBadge status={bill.paymentStatus} />
+          </div>
+        </div>
+      </div>
+
+      {/* Billed To */}
+      <div className="border border-slate-300 bg-slate-50 px-3 py-2.5">
+        <h3 className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+          Billed To:
+        </h3>
+        <p className="font-bold text-slate-900 text-sm mt-1">{bill.customerName}</p>
+        {customerAddress(bill) && (
+          <p className="text-[10px] text-slate-600 mt-0.5">{customerAddress(bill)}</p>
+        )}
+        {bill.customerMobile && (
+          <p className="text-[10px] text-slate-600 mt-0.5">
+            Mobile: {bill.customerMobile}
+          </p>
+        )}
+      </div>
+
+      {/* Line items */}
+      <table className="w-full border-collapse border border-slate-300 text-[10px]">
+        <thead>
+          <tr className="bg-emerald-700 text-white">
+            <th className="border border-emerald-800 px-1.5 py-2 text-left font-bold w-8">
+              S.No
+            </th>
+            <th className="border border-emerald-800 px-1.5 py-2 text-left font-bold">
+              Description
+            </th>
+            <th className="border border-emerald-800 px-1.5 py-2 text-center font-bold w-16">
+              HSN/SAC
+            </th>
+            <th className="border border-emerald-800 px-1.5 py-2 text-center font-bold w-14">
+              Qty
+            </th>
+            <th className="border border-emerald-800 px-1.5 py-2 text-right font-bold w-20">
+              Rate
+            </th>
+            <th className="border border-emerald-800 px-1.5 py-2 text-center font-bold w-12">
+              Tax%
+            </th>
+            <th className="border border-emerald-800 px-1.5 py-2 text-right font-bold w-22">
+              Amount
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-slate-200">
+            <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+              {lineNoStart}
+            </td>
+            <td className="border border-slate-200 px-1.5 py-2">
+              <p className="font-semibold text-slate-900">Machine Rental Usage</p>
+              <p className="text-[9px] text-slate-500">
+                Harvesting services on hourly charges
+              </p>
+            </td>
+            <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+              {hsn}
+            </td>
+            <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+              {bill.hoursUsed} Hrs
+            </td>
+            <td className="border border-slate-200 px-1.5 py-2 text-right text-slate-800">
+              {money(bill.hourlyRate)}
+            </td>
+            <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+              {taxLabel}
+            </td>
+            <td className="border border-slate-200 px-1.5 py-2 text-right font-semibold text-slate-900">
+              {money(usageAmount)}
+            </td>
+          </tr>
+          {bill.extraCharges.map((chg, index) => (
+            <tr key={chg.id} className="border-b border-slate-200">
+              <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+                {lineNoStart + 1 + index}
+              </td>
+              <td className="border border-slate-200 px-1.5 py-2">
+                <p className="font-semibold text-slate-900">{chg.name}</p>
+                <p className="text-[9px] text-slate-500">Additional charge</p>
+              </td>
+              <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+                {hsn}
+              </td>
+              <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+                1
+              </td>
+              <td className="border border-slate-200 px-1.5 py-2 text-right text-slate-800">
+                {money(chg.amount)}
+              </td>
+              <td className="border border-slate-200 px-1.5 py-2 text-center text-slate-700">
+                {taxLabel}
+              </td>
+              <td className="border border-slate-200 px-1.5 py-2 text-right font-semibold text-slate-900">
+                {money(chg.amount)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Totals */}
+      <div className="flex justify-end">
+        <div className="w-64 space-y-1 text-[10px]">
+          {bill.discount > 0 && (
+            <div className="flex justify-between text-red-600">
+              <span className="font-semibold">Discount</span>
+              <span>-{money(bill.discount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-slate-700">
+            <span>Subtotal</span>
+            <span>{money(tax.subtotal)}</span>
+          </div>
+          {tax.taxRate > 0 && (
+            <>
+              <div className="flex justify-between text-slate-700">
+                <span>
+                  CGST (
+                  {tax.taxRate / 2 === Math.floor(tax.taxRate / 2)
+                    ? tax.taxRate / 2
+                    : (tax.taxRate / 2).toFixed(2)}
+                  %)
+                </span>
+                <span>{money(tax.cgst)}</span>
+              </div>
+              <div className="flex justify-between text-slate-700">
+                <span>
+                  SGST (
+                  {tax.taxRate / 2 === Math.floor(tax.taxRate / 2)
+                    ? tax.taxRate / 2
+                    : (tax.taxRate / 2).toFixed(2)}
+                  %)
+                </span>
+                <span>{money(tax.sgst)}</span>
+              </div>
+              <div className="flex justify-between text-slate-700">
+                <span>Total Tax</span>
+                <span>{money(tax.tax)}</span>
+              </div>
+            </>
+          )}
+          <div className="flex justify-between items-center bg-slate-100 border border-slate-300 px-2 py-2 font-bold text-sm text-emerald-700 mt-1">
+            <span>Grand Total</span>
+            <span>{money(tax.invoiceTotal)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Amount in words */}
+      <div className="border border-slate-300 bg-slate-50 px-3 py-2 text-[10px] italic text-slate-700">
+        {amountInWords(tax.invoiceTotal)}
+      </div>
+
+      {/* Footer */}
+      <div className="grid grid-cols-2 gap-6 pt-4 border-t border-slate-200 items-end">
+        <div className="text-[9px] text-slate-500">
+          {(settings.invoiceNotes || settings.footerText) && (
+            <>
+              <span className="font-bold uppercase tracking-wider block text-slate-600 mb-1">
+                Notes
+              </span>
+              {settings.invoiceNotes && <p>{settings.invoiceNotes}</p>}
+              {settings.footerText && <p className="mt-2">{settings.footerText}</p>}
+            </>
+          )}
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-bold text-slate-800">
+            For {settings.businessName}
+          </p>
+          <div className="h-10" />
+          <p className="text-[9px] text-slate-400">Authorized Signatory</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function InvoicePrintArea({
   bill,
   settings,
@@ -27,160 +298,11 @@ export function InvoicePrintArea({
       id="print-area"
       className="hidden print:block print:p-8 bg-white text-black font-sans text-xs w-[210mm] min-h-[297mm]"
     >
-      <div className="border-b-2 border-slate-350 pb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800 tracking-tight uppercase leading-none">
-            {settings.businessName}
-          </h1>
-          <p className="text-[10px] text-slate-500 mt-1 max-w-xs">
-            {settings.businessAddress}
-          </p>
-          <p className="text-[10px] text-slate-500 mt-0.5">
-            Phone: {settings.phoneNumber}
-          </p>
-          {settings.gstNumber && (
-            <p className="text-[10px] text-slate-700 font-semibold mt-0.5">
-              GSTIN: {settings.gstNumber}
-            </p>
-          )}
-        </div>
-        <div className="text-right">
-          <h2 className="text-sm font-bold text-emerald-700 tracking-wide uppercase">
-            Tax Invoice
-          </h2>
-          <p className="font-semibold text-slate-900 mt-1.5">
-            {bill.invoiceNumber}
-          </p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Date: {bill.date}</p>
-          <PdfPaymentBadge status={bill.paymentStatus} />
-        </div>
-      </div>
-
-      <div className="my-6 grid grid-cols-2 gap-8 bg-slate-50 p-4 rounded-lg border border-slate-100">
-        <div>
-          <h3 className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">
-            Bill To:
-          </h3>
-          <p className="font-bold text-slate-800 text-sm mt-1">
-            {bill.customerName}
-          </p>
-          <p className="text-slate-600 mt-0.5">Mobile: {bill.customerMobile}</p>
-          {(bill.customerLocation || bill.customerState) && (
-            <p className="text-slate-600 mt-0.5">
-              Location: {bill.customerLocation || ""}
-              {bill.customerLocation && bill.customerState ? ", " : ""}
-              {bill.customerState || ""}
-            </p>
-          )}
-        </div>
-        <div className="text-right flex flex-col justify-end">
-          <p className="text-[10px] text-slate-600">
-            Hours Rent Rate: {currencySymbol}
-            {bill.hourlyRate} / hour
-          </p>
-          <p className="text-[10px] text-slate-600">
-            Usage Duration: {bill.hoursUsed} hr
-          </p>
-        </div>
-      </div>
-
-      <table className="w-full text-left border-collapse border border-slate-200 mt-6">
-        <thead>
-          <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-            <th className="p-2">Description</th>
-            <th className="p-2 text-center">Unit / Rate</th>
-            <th className="p-2 text-right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="border-b border-slate-150">
-            <td className="p-2">
-              <p className="font-semibold">Machine Rental Usage</p>
-              <span className="text-[10px] text-slate-450">
-                Harvesting services on hourly charges
-              </span>
-            </td>
-            <td className="p-2 text-center">
-              {bill.hoursUsed} hr × {currencySymbol}
-              {bill.hourlyRate}
-            </td>
-            <td className="p-2 text-right font-semibold">
-              {currencySymbol}
-              {bill.hoursUsed * bill.hourlyRate}
-            </td>
-          </tr>
-          {bill.extraCharges.map((chg) => (
-            <tr key={chg.id} className="border-b border-slate-150">
-              <td className="p-2">
-                <p className="font-semibold">{chg.name}</p>
-                <span className="text-[10px] text-slate-450">
-                  Additional service/operating fees
-                </span>
-              </td>
-              <td className="p-2 text-center">Lump sum</td>
-              <td className="p-2 text-right font-semibold">
-                {currencySymbol}
-                {chg.amount}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="mt-8 flex justify-end">
-        <div className="w-64 space-y-1.5 text-right border-t border-slate-200 pt-4">
-          <div className="flex justify-between text-[10px]">
-            <span className="text-slate-500">Subtotal Usage:</span>
-            <span>
-              {currencySymbol}
-              {bill.hoursUsed * bill.hourlyRate}
-            </span>
-          </div>
-          {bill.extraCharges.length > 0 && (
-            <div className="flex justify-between text-[10px]">
-              <span className="text-slate-500">Additional Charges:</span>
-              <span>
-                +{currencySymbol}
-                {bill.extraCharges.reduce((s, c) => s + c.amount, 0)}
-              </span>
-            </div>
-          )}
-          {bill.discount > 0 && (
-            <div className="flex justify-between text-[10px] text-red-600 font-semibold">
-              <span>Discount Applied:</span>
-              <span>
-                -{currencySymbol}
-                {bill.discount}
-              </span>
-            </div>
-          )}
-          <div className="flex justify-between border-t-2 border-emerald-600 pt-2 font-bold text-sm text-slate-800">
-            <span>Grand Total:</span>
-            <span className="text-emerald-700">
-              {currencySymbol}
-              {bill.grandTotal}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-16 grid grid-cols-2 gap-8 items-end border-t border-slate-100 pt-8">
-        <div className="text-[9px] text-slate-500">
-          <span className="font-bold uppercase tracking-wider block text-slate-600 mb-1">
-            Invoice Notes
-          </span>
-          <p>
-            {settings.invoiceNotes || "Please clear payment within due period."}
-          </p>
-          {settings.footerText && <p className="mt-4">{settings.footerText}</p>}
-        </div>
-        <div className="text-right flex flex-col items-end">
-          <div className="h-10 w-24 border-b border-slate-300" />
-          <p className="text-[10px] font-semibold text-slate-700 mt-2">
-            Authorized Signatory
-          </p>
-        </div>
-      </div>
+      <InvoiceBody
+        bill={bill}
+        settings={settings}
+        currencySymbol={currencySymbol}
+      />
     </div>
   );
 }
@@ -191,114 +313,13 @@ export function InvoicePreviewContent({
   currencySymbol,
 }: InvoiceDocumentProps) {
   return (
-    <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-6 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono text-[11px] space-y-4 shadow-inner max-h-[50vh] overflow-y-auto">
-      <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-        <div>
-          <h3 className="font-bold text-xs text-emerald-600">
-            {settings.businessName}
-          </h3>
-          <p className="text-[10px] text-slate-500">
-            {settings.businessAddress}
-          </p>
-          <p className="text-[10px] text-slate-500">
-            Phone: {settings.phoneNumber}
-          </p>
-        </div>
-        <div className="text-right">
-          <h4 className="font-bold text-xs uppercase text-slate-400">
-            Tax Invoice
-          </h4>
-          <p className="font-bold">{bill.invoiceNumber}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Date: {bill.date}</p>
-          <PdfPaymentBadge status={bill.paymentStatus} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 text-[10px]">
-        <div>
-          <span className="text-[9px] text-slate-400 uppercase tracking-wider block">
-            Farmer Info
-          </span>
-          <p className="font-bold">{bill.customerName}</p>
-          <p>Mobile: {bill.customerMobile}</p>
-          {(bill.customerLocation || bill.customerState) && (
-            <p>
-              Location: {bill.customerLocation || ""}
-              {bill.customerLocation && bill.customerState ? ", " : ""}
-              {bill.customerState || ""}
-            </p>
-          )}
-        </div>
-        <div className="text-right flex flex-col justify-end">
-          <p>
-            Rent Rate: {currencySymbol}
-            {bill.hourlyRate}/hour
-          </p>
-          <p>Duration: {bill.hoursUsed} hours</p>
-          <p>Date: {bill.date}</p>
-        </div>
-      </div>
-
-      <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-1 text-[9px] uppercase">
-              <th>Description</th>
-              <th className="text-right">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-slate-50 dark:border-slate-900">
-              <td className="py-2">
-                Machine Rental Usage ({bill.hoursUsed} hr)
-              </td>
-              <td className="text-right py-2">
-                {currencySymbol}
-                {bill.hoursUsed * bill.hourlyRate}
-              </td>
-            </tr>
-            {bill.extraCharges.map((chg) => (
-              <tr
-                key={chg.id}
-                className="border-b border-slate-50 dark:border-slate-900"
-              >
-                <td className="py-2">{chg.name}</td>
-                <td className="text-right py-2">
-                  +{currencySymbol}
-                  {chg.amount}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex flex-col items-end pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1">
-        <div className="flex justify-between w-48 text-[10px]">
-          <span className="text-slate-400">Subtotal:</span>
-          <span>
-            {currencySymbol}
-            {bill.hoursUsed * bill.hourlyRate +
-              bill.extraCharges.reduce((s, c) => s + c.amount, 0)}
-          </span>
-        </div>
-        {bill.discount > 0 && (
-          <div className="flex justify-between w-48 text-[10px] text-red-500">
-            <span className="font-semibold">Discount:</span>
-            <span>
-              -{currencySymbol}
-              {bill.discount}
-            </span>
-          </div>
-        )}
-        <div className="flex justify-between w-48 font-bold text-xs pt-1.5 border-t border-slate-100 dark:border-slate-800">
-          <span>Grand Total:</span>
-          <span className="text-emerald-600">
-            {currencySymbol}
-            {bill.grandTotal}
-          </span>
-        </div>
-      </div>
+    <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white text-slate-900 shadow-inner max-h-[55vh] overflow-y-auto">
+      <InvoiceBody
+        bill={bill}
+        settings={settings}
+        currencySymbol={currencySymbol}
+        compact
+      />
     </div>
   );
 }

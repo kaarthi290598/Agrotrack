@@ -20,7 +20,8 @@ export default defineSchema({
   })
     .index("by_org", ["orgId"])
     .index("by_clerkUser", ["clerkUserId"])
-    .index("by_org_clerkUser", ["orgId", "clerkUserId"]),
+    .index("by_org_clerkUser", ["orgId", "clerkUserId"])
+    .index("by_org_email", ["orgId", "email"]),
 
   /**
    * Pending org invitations with the intended Convex application role.
@@ -58,7 +59,10 @@ export default defineSchema({
 
   bills: defineTable({
     orgId: v.optional(v.string()),
-    invoiceNumber: v.string(),
+    /** Assigned only when paymentStatus becomes PAID; never regenerated. */
+    invoiceNumber: v.optional(v.string()),
+    /** Estimated Running Cost — required on new writes; optional for legacy rows. */
+    ertNumber: v.optional(v.string()),
     customerId: v.string(),
     customerName: v.optional(v.string()),
     customerMobile: v.optional(v.string()),
@@ -89,12 +93,19 @@ export default defineSchema({
       v.literal("UNPAID"),
       v.literal("PARTIAL_PAID")
     ),
+    /** Required on new Fully Paid writes; optional for legacy paid bills. */
+    paymentMode: v.optional(
+      v.union(v.literal("CASH"), v.literal("ONLINE"))
+    ),
     amountPaid: v.optional(v.number()),
     balanceAmount: v.optional(v.number()),
     createdBy: v.optional(v.string()),
     createdByEmail: v.optional(v.string()),
     createdAt: v.number(),
-  }).index("by_org", ["orgId"]),
+  })
+    .index("by_org", ["orgId"])
+    .index("by_org_invoiceNumber", ["orgId", "invoiceNumber"])
+    .index("by_org_ertNumber", ["orgId", "ertNumber"]),
 
   settings: defineTable({
     orgId: v.optional(v.string()),
@@ -104,9 +115,17 @@ export default defineSchema({
     phoneNumber: v.string(),
     gstNumber: v.optional(v.string()),
     invoicePrefix: v.string(),
+    /** Next sequence integer to assign (padded under prefix). */
+    nextInvoiceNumber: v.optional(v.number()),
+    /** Digit width for padded sequence (3–8). Default 5. */
+    invoiceNumberDigits: v.optional(v.number()),
     currencySymbol: v.string(),
     defaultTax: v.number(),
     invoiceNotes: v.optional(v.string()),
     footerText: v.optional(v.string()),
+    /** Org-level HSN/SAC code printed on Tax Invoice line items. */
+    hsnCode: v.optional(v.string()),
+    /** Convex file storage id for invoice logo (PNG/SVG). */
+    logoStorageId: v.optional(v.id("_storage")),
   }).index("by_org", ["orgId"]),
 });

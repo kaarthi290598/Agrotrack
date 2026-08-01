@@ -42,8 +42,26 @@ export async function downloadInvoicePdf(filename: string): Promise<void> {
   ].join(";");
   document.body.style.overflow = "hidden";
 
-  // Allow layout to settle before capture
+  // Allow layout to settle and logo images to decode before capture
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const images = Array.from(element.querySelectorAll("img"));
+  await Promise.all(
+    images.map(async (img) => {
+      try {
+        if (!img.complete) {
+          await new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          });
+        }
+        if (typeof img.decode === "function") {
+          await img.decode().catch(() => undefined);
+        }
+      } catch {
+        // Ignore decode failures; capture will proceed without the image
+      }
+    })
+  );
 
   try {
     const canvas = await html2canvas(element, {

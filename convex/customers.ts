@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireOrgMember, assertSameOrg } from "./authHelpers";
+import { requireOrgMember, requireAdmin, assertSameOrg } from "./authHelpers";
 
 export const getAll = query({
   args: {},
@@ -68,7 +68,7 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("customers") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgMember(ctx);
+    const { orgId } = await requireAdmin(ctx);
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found");
     assertSameOrg(customer.orgId, orgId, "Customer");

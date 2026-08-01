@@ -18,7 +18,8 @@ import {
   Sun,
   Moon,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  DatabaseBackup,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -28,7 +29,8 @@ import {
   hasElevatedAccess,
   isAppAdmin,
 } from "../../types";
-import { Show, SignInButton, SignUpButton, UserButton, OrganizationSwitcher, useAuth as useClerkAuth, useOrganization } from "@clerk/nextjs";
+import { Show, SignInButton, UserButton, OrganizationSwitcher, useAuth as useClerkAuth } from "@clerk/nextjs";
+import { organizationSwitcherAppearance } from "../../lib/clerk-appearance";
 
 // Toggle to show/hide testing mode widget in sidebar
 const SHOW_TESTING_MODE_WIDGET = false;
@@ -46,7 +48,8 @@ const allNavigation: SidebarItem[] = [
   { name: "Customers", href: "/customers", icon: Users },
   { name: "Members", href: "/members", icon: UserCheck },
   { name: "Reports", href: "/reports", icon: BarChart3 },
-  { name: "Settings", href: "/settings", icon: SettingsIcon }
+  { name: "Backup", href: "/backup", icon: DatabaseBackup },
+  { name: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 
 export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -54,8 +57,7 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
   const pathname = usePathname();
   const router = useRouter();
   const { user, isLoaded, isRoleLoading, signOut, switchRole } = useAuth();
-  const { orgId, orgRole } = useClerkAuth();
-  const { organization } = useOrganization();
+  const { orgRole } = useClerkAuth();
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   const role = user?.role;
@@ -139,17 +141,17 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
               </div>
             </div>
 
-            {/* Clerk Organization Switcher & ID Details */}
-            <div className="px-4 pt-3 pb-1">
-              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-2 space-y-1.5">
+            {/* Clerk Organization Switcher & role badges */}
+            <div className="px-4 pt-3 pb-1 min-w-0">
+              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-2 space-y-1.5 min-w-0 overflow-hidden">
                 <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block px-1">Active Organization</span>
-                <OrganizationSwitcher hidePersonal appearance={{ elements: { rootBox: "w-full flex justify-between" } }} />
+                <OrganizationSwitcher
+                  hidePersonal
+                  appearance={organizationSwitcherAppearance}
+                />
                 
-                {/* Visual Clerk Org ID Debug Badge */}
-                <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/80 px-1 font-mono text-[9.5px]">
-                  <div className="flex items-center justify-between font-bold text-emerald-600 dark:text-emerald-400">
-                    <span className="truncate max-w-[120px]">{organization?.name || "No Org"}</span>
-                    <div className="flex gap-1">
+                <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/80 px-1">
+                  <div className="flex items-center justify-end gap-1 flex-wrap">
                       {orgRole && (
                         <span className="text-[8px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.5 rounded font-sans uppercase font-extrabold">
                           {orgRole}
@@ -164,7 +166,6 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       }`}>
                         {user?.role || "loading"}
                       </span>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -282,11 +283,6 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                       Sign In
                     </button>
                   </SignInButton>
-                  <SignUpButton mode="modal">
-                    <button className="flex-1 py-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-                      Sign Up
-                    </button>
-                  </SignUpButton>
                 </div>
               </Show>
             </div>
@@ -321,15 +317,22 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                 </button>
               </div>
 
-              {/* Mobile Clerk Organization Switcher & Details */}
-              <div className="px-4 pt-3 pb-1">
-                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-2 space-y-1.5">
+              {/* Mobile Clerk Organization Switcher & role badges */}
+              <div className="px-4 pt-3 pb-1 min-w-0">
+                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-2 space-y-1.5 min-w-0 overflow-hidden">
                   <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block px-1">Active Organization</span>
-                  <OrganizationSwitcher hidePersonal appearance={{ elements: { rootBox: "w-full flex justify-between" } }} />
+                  <OrganizationSwitcher
+                    hidePersonal
+                    appearance={organizationSwitcherAppearance}
+                  />
                   
-                  <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/80 px-1 font-mono text-[9.5px]">
-                    <div className="flex items-center justify-between font-bold text-emerald-600 dark:text-emerald-400">
-                      <span className="truncate max-w-[120px]">{organization?.name || "No Org"}</span>
+                  <div className="pt-1 border-t border-slate-200/60 dark:border-slate-800/80 px-1">
+                    <div className="flex items-center justify-end gap-1 flex-wrap">
+                      {orgRole && (
+                        <span className="text-[8px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.5 rounded font-sans uppercase font-extrabold">
+                          {orgRole}
+                        </span>
+                      )}
                       <span className={`text-[8px] px-1.5 py-0.5 rounded font-sans uppercase font-extrabold ${
                         role === "ADMIN"
                           ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"
@@ -411,11 +414,6 @@ export const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ child
                         Sign In
                       </button>
                     </SignInButton>
-                    <SignUpButton mode="modal">
-                      <button className="flex-1 py-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-                        Sign Up
-                      </button>
-                    </SignUpButton>
                   </div>
                 </Show>
               </div>

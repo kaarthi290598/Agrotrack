@@ -1,13 +1,6 @@
-import { SignUp } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 
+/** Self-registration is disabled — invite / admin provisioning only. */
 export default function SignUpPage() {
-  return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <SignUp
-        forceRedirectUrl="/"
-        fallbackRedirectUrl="/"
-        signInUrl="/sign-in"
-      />
-    </div>
-  );
+  redirect("/sign-in");
 }

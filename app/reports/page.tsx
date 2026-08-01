@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
 import { billingService } from "../../services/billing.service";
 import { customerService } from "../../services/customer.service";
 import { settingsService } from "../../services/settings.service";
@@ -40,8 +39,8 @@ import { ListPageSkeleton } from "../../components/skeletons/PageSkeletons";
 import { BillCreatorCell } from "../../components/bills/BillCreatorCell";
 import { InvoicePrintArea, InvoicePreviewContent, invoiceViewButtonClass } from "../../components/bills/InvoiceDocument";
 import { useOrgMemberLookup } from "../../hooks/useOrgMemberLookup";
-import { resolveBillCreator } from "../../lib/clerk-user";
 import { downloadInvoicePdf } from "../../lib/invoice-pdf";
+import { downloadGstSalesReport } from "../../lib/gst-report";
 
 type EnrichedBill = Bill & {
   customerName?: string;
@@ -174,7 +173,8 @@ export default function ReportsPage() {
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (b) =>
-          b.invoiceNumber.toLowerCase().includes(q) ||
+          (b.invoiceNumber || "").toLowerCase().includes(q) ||
+          (b.ertNumber || "").toLowerCase().includes(q) ||
           b.customerName?.toLowerCase().includes(q) ||
           b.customerLocation?.toLowerCase().includes(q) ||
           b.customerState?.toLowerCase().includes(q) ||
@@ -213,7 +213,7 @@ export default function ReportsPage() {
     setFilteredBills(result);
   }, [searchQuery, dateRange, selectedLocation, paymentFilter, minAmount, bills]);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filteredBills.length === 0) {
       toast({
         type: "error",
@@ -222,51 +222,43 @@ export default function ReportsPage() {
       });
       return;
     }
+    if (!settings) {
+      toast({
+        type: "error",
+        title: "Settings Unavailable",
+        description: "Company settings must load before exporting the report.",
+      });
+      return;
+    }
 
     setIsExporting(true);
     try {
-      const rows = filteredBills.map((b) => ({
-        "Invoice No": b.invoiceNumber,
-        Date: b.date,
-        Farmer: b.customerName || "",
-        Mobile: b.customerMobile || "",
-        Location: b.customerLocation || "",
-        State: b.customerState || "",
-        "Created By": resolveBillCreator(b, memberLookup).name,
-        "Hours Used": b.hoursUsed,
-        "Hourly Rate": b.hourlyRate,
-        "Extra Charges": b.extraCharges.reduce((s, c) => s + c.amount, 0),
-        Discount: b.discount || 0,
-        "Grand Total": b.grandTotal,
-        Payment: b.paymentStatus === "PAID" ? "Paid" : "Not Paid",
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Billing Reports");
-
-      const colWidths = Object.keys(rows[0]).map((key) => ({
-        wch: Math.max(
-          key.length,
-          ...rows.map((r) => String((r as Record<string, unknown>)[key] ?? "").length)
-        ) + 2,
-      }));
-      worksheet["!cols"] = colWidths;
-
-      const stamp = new Date().toISOString().slice(0, 10);
-      const fileName = `billing-reports-${stamp}.xlsx`;
-      XLSX.writeFile(workbook, fileName);
+      const fileName = await downloadGstSalesReport({
+        bills: filteredBills,
+        settings,
+        range:
+          dateRange.preset === "all"
+            ? {}
+            : {
+                startDate: dateRange.startDate || undefined,
+                endDate: dateRange.endDate || undefined,
+              },
+      });
 
       toast({
         type: "success",
         title: "Export Ready",
         description: `Downloaded ${filteredBills.length} invoice${filteredBills.length === 1 ? "" : "s"} as ${fileName}.`,
       });
-    } catch {
+    } catch (error) {
+      console.error("GST report export failed:", error);
       toast({
         type: "error",
         title: "Export Failed",
-        description: "Could not generate the Excel file. Please try again.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not generate the Excel file. Please try again.",
       });
     } finally {
       setIsExporting(false);
@@ -275,6 +267,14 @@ export default function ReportsPage() {
 
   const triggerPrint = async () => {
     if (!selectedBill) return;
+    if (!selectedBill.invoiceNumber) {
+      toast({
+        type: "error",
+        title: "Invoice Pending",
+        description: "PDF download is available after the bill is Fully Paid and an invoice number is assigned.",
+      });
+      return;
+    }
     setIsExportingPdf(true);
     try {
       await downloadInvoicePdf(selectedBill.invoiceNumber);
@@ -485,7 +485,7 @@ export default function ReportsPage() {
                     <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2">
                       <div>
                         <span className="font-mono font-bold text-xs text-slate-900 dark:text-white block">
-                          {bill.invoiceNumber}
+                          {bill.invoiceNumber || bill.ertNumber || "Pending"}
                         </span>
                         <span className="text-[10px] text-slate-500">{bill.date}</span>
                       </div>
@@ -543,7 +543,13 @@ export default function ReportsPage() {
                     <TableBody>
                       {filteredBills.map((bill) => (
                         <TableRow key={bill.id}>
-                          <TableCell className={TABLE.invoice}>{bill.invoiceNumber}</TableCell>
+                          <TableCell className={TABLE.invoice}>
+                            {bill.invoiceNumber || (
+                              <span className="text-slate-400" title={bill.ertNumber ? `ERT ${bill.ertNumber}` : undefined}>
+                                Pending
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell className={TABLE.name}>
                             {bill.customerName}
                           </TableCell>

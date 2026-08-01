@@ -1,4 +1,4 @@
-import { Bill, DashboardStats, UserProfile } from "../types";
+import { Bill, DashboardStats, PaymentMode, UserProfile } from "../types";
 import { getDBBills, saveDBBills } from "./db";
 import { api } from "../convex/_generated/api";
 import { customerService } from "./customer.service";
@@ -13,6 +13,7 @@ export const billingService = {
     const mapped: Bill[] = data.map((b) => ({
       id: b._id,
       invoiceNumber: b.invoiceNumber,
+      ertNumber: b.ertNumber,
       customerId: b.customerId,
       customerName: b.customerName,
       customerMobile: b.customerMobile,
@@ -28,6 +29,7 @@ export const billingService = {
       grandTotal: b.grandTotal,
       status: b.status,
       paymentStatus: b.paymentStatus,
+      paymentMode: b.paymentMode,
       amountPaid: b.amountPaid,
       balanceAmount: b.balanceAmount,
       createdBy: b.createdBy,
@@ -45,6 +47,7 @@ export const billingService = {
     const convex = await getAuthedConvexClient();
     const res = await convex.mutation(api.bills.create, {
       ...billData,
+      ertNumber: billData.ertNumber || "",
       status: billData.status || "PENDING_APPROVAL",
       paymentStatus: (billData.paymentStatus as any) || "UNPAID",
     });
@@ -52,6 +55,7 @@ export const billingService = {
       ...billData,
       id: res.id,
       invoiceNumber: res.invoiceNumber,
+      ertNumber: res.ertNumber,
       status: billData.status || "PENDING_APPROVAL",
       paymentStatus: billData.paymentStatus || "UNPAID",
       createdAt: Date.now(),
@@ -63,17 +67,23 @@ export const billingService = {
     updatedFields: Partial<Omit<Bill, "id" | "invoiceNumber" | "createdAt">>
   ): Promise<Bill> => {
     const convex = await getAuthedConvexClient();
-    await convex.mutation(api.bills.update, {
+    const res = await convex.mutation(api.bills.update, {
       id: id as any,
       ...(updatedFields as any),
     });
-    return { id, ...updatedFields } as Bill;
+    return {
+      id,
+      ...updatedFields,
+      invoiceNumber: res?.invoiceNumber,
+      ertNumber: res?.ertNumber ?? updatedFields.ertNumber,
+    } as Bill;
   },
 
   updatePaymentStatus: async (
     id: string,
     paymentStatus: "PAID" | "UNPAID" | "PARTIAL_PAID",
-    amountPaid?: number
+    amountPaid?: number,
+    paymentMode?: PaymentMode
   ): Promise<Bill> => {
     const convex = await getAuthedConvexClient();
     const localBills = getDBBills();
@@ -87,21 +97,34 @@ export const billingService = {
           : 0;
     const balance = Math.max(0, total - paid);
 
-    await convex.mutation(api.bills.updatePaymentStatus, {
+    const res = await convex.mutation(api.bills.updatePaymentStatus, {
       id: id as any,
       paymentStatus: paymentStatus as any,
+      paymentMode: paymentStatus === "PAID" ? paymentMode : undefined,
       amountPaid: paid,
       balanceAmount: balance,
     });
 
     const bills = getDBBills();
     const index = bills.findIndex((b) => b.id === id);
-    if (index === -1) return { id, paymentStatus } as Bill;
+    if (index === -1) {
+      return {
+        id,
+        paymentStatus,
+        invoiceNumber: res?.invoiceNumber,
+        paymentMode: res?.paymentMode,
+      } as Bill;
+    }
 
     const targetBill = bills[index];
     targetBill.paymentStatus = paymentStatus;
+    targetBill.paymentMode =
+      paymentStatus === "PAID" ? res?.paymentMode ?? paymentMode : undefined;
     targetBill.amountPaid = paid;
     targetBill.balanceAmount = balance;
+    if (res?.invoiceNumber) {
+      targetBill.invoiceNumber = res.invoiceNumber;
+    }
     bills[index] = targetBill;
     saveDBBills(bills);
     return targetBill;

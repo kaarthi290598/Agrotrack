@@ -1,4 +1,5 @@
 import { SignIn } from "@clerk/nextjs";
+import { hideSignUpElements } from "../../../lib/clerk-appearance";
 
 export default function SignInPage() {
   return (
@@ -6,7 +7,7 @@ export default function SignInPage() {
       <SignIn
         forceRedirectUrl="/"
         fallbackRedirectUrl="/"
-        signUpUrl="/sign-up"
+        appearance={{ elements: hideSignUpElements }}
       />
     </div>
   );

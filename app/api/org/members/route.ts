@@ -24,12 +24,19 @@ function randomTempPassword() {
 }
 
 /**
- * Creates (or finds) a Clerk user, writes Convex role first, then org membership.
+ * Creates (or finds) a Clerk user, adds org membership, then writes Convex role.
+ * Clerk membership first so a failed membership never leaves an orphan Convex row.
  */
 export async function POST(req: NextRequest) {
   const { userId, orgId: sessionOrgId, getToken } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!sessionOrgId) {
+    return NextResponse.json(
+      { error: "No active organization selected" },
+      { status: 400 }
+    );
   }
 
   let body: { email?: string; orgId?: string; role?: string; fullName?: string };
@@ -42,7 +49,7 @@ export async function POST(req: NextRequest) {
   const email = String(body.email || "")
     .trim()
     .toLowerCase();
-  const orgId = String(body.orgId || sessionOrgId || "");
+  const orgId = String(body.orgId || sessionOrgId);
   const role = (String(body.role || "SUPERVISOR").toUpperCase() ||
     "SUPERVISOR") as AppRole;
   const fullNameHint = String(body.fullName || "").trim();
@@ -50,13 +57,7 @@ export async function POST(req: NextRequest) {
   if (!email.includes("@")) {
     return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
   }
-  if (!orgId) {
-    return NextResponse.json(
-      { error: "No active organization selected" },
-      { status: 400 }
-    );
-  }
-  if (sessionOrgId && sessionOrgId !== orgId) {
+  if (sessionOrgId !== orgId) {
     return NextResponse.json({ error: "Organization mismatch" }, { status: 403 });
   }
   if (!["ADMIN", "BUSINESS_OPERATIONS_LEAD", "SUPERVISOR"].includes(role)) {
@@ -142,24 +143,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  let savedRole: AppRole = role;
-  try {
-    const saved = await convex.mutation(api.users.upsertCreatedMember, {
-      orgId,
-      clerkUserId,
-      email,
-      fullName,
-      imageUrl,
-      role,
-    });
-    savedRole = (saved?.role as AppRole) || role;
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to save Convex member";
-    console.error("Convex member upsert failed:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-
   try {
     await clerk.organizations.createOrganizationMembership({
       organizationId: orgId,
@@ -176,6 +159,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let savedRole: AppRole = role;
   try {
     const saved = await convex.mutation(api.users.upsertCreatedMember, {
       orgId,
@@ -183,11 +167,19 @@ export async function POST(req: NextRequest) {
       email,
       fullName,
       imageUrl,
-      role: savedRole,
+      role,
     });
-    savedRole = (saved?.role as AppRole) || savedRole;
+    savedRole = (saved?.role as AppRole) || role;
   } catch (error) {
-    console.error("Convex role re-assert failed:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to save Convex member";
+    console.error("Convex member upsert failed after Clerk membership:", error);
+    return NextResponse.json(
+      {
+        error: `${message}. Clerk membership may already exist — use Sync Members to finish.`,
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
@@ -205,6 +197,12 @@ export async function DELETE(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!sessionOrgId) {
+    return NextResponse.json(
+      { error: "No active organization selected" },
+      { status: 400 }
+    );
+  }
 
   let body: { orgId?: string; userId?: string };
   try {
@@ -213,16 +211,10 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const orgId = String(body.orgId || sessionOrgId || "");
+  const orgId = String(body.orgId || sessionOrgId);
   const convexUserId = String(body.userId || "");
 
-  if (!orgId) {
-    return NextResponse.json(
-      { error: "No active organization selected" },
-      { status: 400 }
-    );
-  }
-  if (sessionOrgId && sessionOrgId !== orgId) {
+  if (sessionOrgId !== orgId) {
     return NextResponse.json({ error: "Organization mismatch" }, { status: 403 });
   }
   if (!convexUserId) {
@@ -249,22 +241,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    // Convex first so a removal tombstone is in place before any sync/webhook
-    // can recreate the row from a stale Clerk membership list.
-    try {
-      await convex.mutation(api.users.removeMember, {
-        orgId,
-        userId: convexUserId as Id<"users">,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to remove Convex record";
-      console.error("Convex member removal failed:", error);
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
-
     const clerk = await clerkClient();
 
+    // Clerk first: if membership delete fails, Convex row stays intact.
     try {
       await clerk.organizations.deleteOrganizationMembership({
         organizationId: orgId,
@@ -297,6 +276,23 @@ export async function DELETE(req: NextRequest) {
       if (status !== 404) {
         console.error("Clerk user delete failed:", error);
       }
+    }
+
+    try {
+      await convex.mutation(api.users.removeMember, {
+        orgId,
+        userId: convexUserId as Id<"users">,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to remove Convex record";
+      console.error("Convex member removal failed after Clerk delete:", error);
+      return NextResponse.json(
+        {
+          error: `${message}. Clerk membership was removed — Sync Members or webhook may finish cleanup.`,
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({

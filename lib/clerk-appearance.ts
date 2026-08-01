@@ -1,9 +1,59 @@
 import { dark } from "@clerk/ui/themes";
 
+/**
+ * Invite-only / no self-serve org create — app UI only hides entry points.
+ * Real enforcement is in the Clerk Dashboard (same instance as NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY):
+ *
+ * 1. Disable Sign up (Restrictions / Sign-up & Sign-in) for this instance (dev and prod).
+ * 2. Keep "Allow user-created organizations" off.
+ * 3. Confirm you edited the instance that matches the site’s publishable key.
+ *
+ * App companions: /sign-up redirects to /sign-in; hideSignUpElements; hideCreateOrganizationElements.
+ */
+
 const sharedVariables = {
   borderRadius: "0.75rem",
   fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
   fontFamilyButtons: "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
+};
+
+/** Hide Clerk "Create organization" entry points (orgs are provisioned by admins). */
+export const hideCreateOrganizationElements = {
+  organizationSwitcherPopoverActionButton__createOrganization: {
+    display: "none",
+  },
+  organizationListCreateOrganizationActionButton: {
+    display: "none",
+  },
+  taskChooseOrganizationCreateOrganizationActionButton: {
+    display: "none",
+  },
+} as const;
+
+/** Invite-only app: hide Clerk Sign-in → Sign-up links. */
+export const hideSignUpElements = {
+  footerAction: { display: "none" },
+  footerActionLink: { display: "none" },
+  footerActionText: { display: "none" },
+} as const;
+
+export const organizationSwitcherAppearance = {
+  elements: {
+    rootBox: "w-full min-w-0 max-w-full overflow-hidden",
+    organizationSwitcherTrigger:
+      "w-full max-w-full min-w-0 overflow-hidden justify-start",
+    organizationPreview: "min-w-0 flex-1 overflow-hidden",
+    organizationPreviewTextContainer: "min-w-0 overflow-hidden",
+    organizationPreviewMainIdentifier: "truncate block max-w-full",
+    organizationPreviewSecondaryIdentifier: "truncate block max-w-full",
+    ...hideCreateOrganizationElements,
+  },
+};
+
+const sharedElements = {
+  modalBackdrop: "backdrop-blur-sm",
+  ...hideCreateOrganizationElements,
+  ...hideSignUpElements,
 };
 
 export const clerkLightAppearance = {
@@ -22,7 +72,7 @@ export const clerkLightAppearance = {
     colorModalBackdrop: "rgba(15, 23, 42, 0.55)",
   },
   elements: {
-    modalBackdrop: "backdrop-blur-sm",
+    ...sharedElements,
     cardBox: "shadow-xl border border-slate-200",
     popoverBox: "shadow-xl border border-slate-200",
     userButtonPopoverCard: "border border-slate-200 shadow-xl",
@@ -47,7 +97,7 @@ export const clerkDarkAppearance = {
     colorModalBackdrop: "rgba(2, 6, 23, 0.78)",
   },
   elements: {
-    modalBackdrop: "backdrop-blur-sm",
+    ...sharedElements,
     cardBox: "shadow-2xl border border-slate-800 bg-slate-900",
     popoverBox: "shadow-2xl border border-slate-800 bg-slate-900",
     userButtonPopoverCard: "border border-slate-800 bg-slate-900 shadow-2xl",

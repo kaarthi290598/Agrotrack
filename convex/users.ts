@@ -123,6 +123,63 @@ async function findOrgUser(
   return keeper;
 }
 
+async function findOrgUserByEmail(
+  ctx: { db: any },
+  orgId: string,
+  email: string
+) {
+  const normalized = normalizeEmail(email);
+  const rows = await ctx.db
+    .query("users")
+    .withIndex("by_org_email", (q: any) =>
+      q.eq("orgId", orgId).eq("email", normalized)
+    )
+    .collect();
+
+  if (rows.length === 0) return null;
+  if (rows.length === 1) return rows[0];
+
+  const rank: Record<AppRole, number> = {
+    ADMIN: 3,
+    BUSINESS_OPERATIONS_LEAD: 2,
+    SUPERVISOR: 1,
+  };
+  rows.sort((a: any, b: any) => {
+    const roleDiff = (rank[b.role as AppRole] || 0) - (rank[a.role as AppRole] || 0);
+    if (roleDiff !== 0) return roleDiff;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
+  const keeper = rows[0];
+  for (const extra of rows.slice(1)) {
+    await ctx.db.delete(extra._id);
+  }
+  return keeper;
+}
+
+/**
+ * Resolve an existing org user by clerk id.
+ * Email is only used to detect conflicts (never rebinds clerkUserId).
+ * Returns null when callers may safely insert a new row.
+ */
+async function findExistingOrgUser(
+  ctx: { db: any },
+  orgId: string,
+  clerkUserId: string,
+  email: string
+) {
+  const byClerk = await findOrgUser(ctx, orgId, clerkUserId);
+  if (byClerk) return byClerk;
+
+  const byEmail = await findOrgUserByEmail(ctx, orgId, email);
+  if (!byEmail) return null;
+
+  if (byEmail.clerkUserId !== clerkUserId) {
+    throw new Error("Email already linked to another account in this organization");
+  }
+
+  return byEmail;
+}
+
 async function findPendingInvite(
   ctx: { db: any },
   orgId: string,
@@ -206,7 +263,9 @@ async function requireOrgAdmin(ctx: { db: any; auth: any }, orgId: string) {
 
 /**
  * Upsert the signed-in user's Convex record for the active org.
- * Creates with pending-invite role (if any) or ADMIN/MEMBER from Clerk org role.
+ * Creates only when no row exists for this clerkUserId in the org;
+ * otherwise updates profile fields and never duplicates.
+ * Never rebinds clerkUserId via email (conflict throws).
  */
 export const ensureCurrentUser = mutation({
   args: {
@@ -239,12 +298,29 @@ export const ensureCurrentUser = mutation({
     }
 
     const clerkUserId = identity.subject;
+    const jwtEmail = identity.email
+      ? normalizeEmail(String(identity.email))
+      : "";
+    const argEmail = normalizeEmail(args.email);
+    if (jwtEmail && argEmail && jwtEmail !== argEmail) {
+      throw new Error("Email mismatch between auth token and request");
+    }
+    const email = jwtEmail || argEmail;
+    if (!email.includes("@")) {
+      throw new Error("Valid email is required");
+    }
+
     const now = Date.now();
-    const existing = await findOrgUser(ctx, args.orgId, clerkUserId);
+    const existing = await findExistingOrgUser(
+      ctx,
+      args.orgId,
+      clerkUserId,
+      email
+    );
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        email: args.email,
+        email,
         fullName: args.fullName,
         imageUrl: args.imageUrl,
         updatedAt: now,
@@ -252,19 +328,25 @@ export const ensureCurrentUser = mutation({
       return existing._id;
     }
 
+    if (await isRecentlyRemoved(ctx, args.orgId, clerkUserId, now)) {
+      throw new Error(
+        "This account was recently removed from the organization. Contact an administrator."
+      );
+    }
+
     // Prefer role from the verified token over client-supplied clerkOrgRole.
     const tokenOrgRole = getOrgRoleFromIdentity(identity);
     const role = await resolveCreateRole(
       ctx,
       args.orgId,
-      args.email,
+      email,
       tokenOrgRole || args.clerkOrgRole
     );
 
     return await ctx.db.insert("users", {
       clerkUserId,
       orgId: args.orgId,
-      email: args.email,
+      email,
       fullName: args.fullName,
       imageUrl: args.imageUrl,
       role,
@@ -302,10 +384,15 @@ export const syncOrgMembers = mutation({
     let removed = 0;
 
     for (const member of args.members) {
-      const existing = await findOrgUser(ctx, args.orgId, member.clerkUserId);
+      const existing = await findExistingOrgUser(
+        ctx,
+        args.orgId,
+        member.clerkUserId,
+        member.email
+      );
       if (existing) {
         await ctx.db.patch(existing._id, {
-          email: member.email,
+          email: normalizeEmail(member.email),
           fullName: member.fullName,
           imageUrl: member.imageUrl,
           updatedAt: now,
@@ -325,7 +412,7 @@ export const syncOrgMembers = mutation({
         await ctx.db.insert("users", {
           clerkUserId: member.clerkUserId,
           orgId: args.orgId,
-          email: member.email,
+          email: normalizeEmail(member.email),
           fullName: member.fullName,
           imageUrl: member.imageUrl,
           role,
@@ -379,11 +466,16 @@ export const upsertFromWebhook = mutation({
     }
 
     const now = Date.now();
-    const existing = await findOrgUser(ctx, args.orgId, args.clerkUserId);
+    const existing = await findExistingOrgUser(
+      ctx,
+      args.orgId,
+      args.clerkUserId,
+      args.email
+    );
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        email: args.email,
+        email: normalizeEmail(args.email),
         fullName: args.fullName,
         imageUrl: args.imageUrl,
         updatedAt: now,
@@ -405,7 +497,7 @@ export const upsertFromWebhook = mutation({
     return await ctx.db.insert("users", {
       clerkUserId: args.clerkUserId,
       orgId: args.orgId,
-      email: args.email,
+      email: normalizeEmail(args.email),
       fullName: args.fullName,
       imageUrl: args.imageUrl,
       role,
@@ -650,7 +742,12 @@ export const upsertCreatedMember = mutation({
       await ctx.db.delete(pending._id);
     }
 
-    const existing = await findOrgUser(ctx, args.orgId, args.clerkUserId);
+    const existing = await findExistingOrgUser(
+      ctx,
+      args.orgId,
+      args.clerkUserId,
+      email
+    );
     if (existing) {
       await ctx.db.patch(existing._id, {
         email,

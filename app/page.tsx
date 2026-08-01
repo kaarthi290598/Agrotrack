@@ -270,7 +270,7 @@ export default function DashboardPage() {
                     >
                       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5">
                         <span className="font-mono font-bold text-slate-900 dark:text-white">
-                          {bill.invoiceNumber}
+                          {bill.invoiceNumber || bill.ertNumber || "Pending"}
                         </span>
                         <span
                           className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
@@ -320,7 +320,7 @@ export default function DashboardPage() {
                       {data.recentBills.map((bill) => (
                         <TableRow key={bill.id}>
                           <TableCell className={TABLE.invoice}>
-                            {bill.invoiceNumber}
+                            {bill.invoiceNumber || bill.ertNumber || "Pending"}
                           </TableCell>
                           <TableCell className={TABLE.name}>
                             {bill.customerName}

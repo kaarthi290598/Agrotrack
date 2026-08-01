@@ -9,8 +9,10 @@
  */
 
 import type * as authHelpers from "../authHelpers.js";
+import type * as backup from "../backup.js";
 import type * as bills from "../bills.js";
 import type * as customers from "../customers.js";
+import type * as invoiceSequence from "../invoiceSequence.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 import type * as users from "../users.js";
@@ -23,8 +25,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   authHelpers: typeof authHelpers;
+  backup: typeof backup;
   bills: typeof bills;
   customers: typeof customers;
+  invoiceSequence: typeof invoiceSequence;
   seed: typeof seed;
   settings: typeof settings;
   users: typeof users;
