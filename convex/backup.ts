@@ -97,6 +97,7 @@ export const exportData = query({
         customerLocation: b.customerLocation ?? "",
         customerState: b.customerState ?? "",
         date: b.date,
+        endDate: b.endDate ?? b.date ?? "",
         startTime: b.startTime ?? "",
         endTime: b.endTime ?? "",
         hoursUsed: b.hoursUsed,
@@ -112,6 +113,7 @@ export const exportData = query({
         createdBy: b.createdBy ?? "",
         createdByEmail: b.createdByEmail ?? "",
         createdAt: b.createdAt,
+        activityLog: b.activityLog ?? [],
       })),
       settings: settings
         ? {
@@ -163,6 +165,7 @@ export const restoreData = mutation({
         customerLocation: v.optional(v.string()),
         customerState: v.optional(v.string()),
         date: v.string(),
+        endDate: v.optional(v.string()),
         startTime: v.optional(v.string()),
         endTime: v.optional(v.string()),
         hoursUsed: v.number(),
@@ -184,6 +187,22 @@ export const restoreData = mutation({
         createdBy: v.optional(v.string()),
         createdByEmail: v.optional(v.string()),
         createdAt: v.number(),
+        activityLog: v.optional(
+          v.array(
+            v.object({
+              at: v.number(),
+              byName: v.string(),
+              byUserId: v.optional(v.string()),
+              action: v.union(
+                v.literal("CREATED"),
+                v.literal("UPDATED"),
+                v.literal("APPROVED"),
+                v.literal("REJECTED"),
+                v.literal("PAYMENT_UPDATED")
+              ),
+            })
+          )
+        ),
       })
     ),
     settings: v.optional(
@@ -268,6 +287,7 @@ export const restoreData = mutation({
         customerLocation: emptyToUndefined(b.customerLocation),
         customerState: emptyToUndefined(b.customerState),
         date: b.date,
+        endDate: emptyToUndefined(b.endDate) || b.date,
         startTime: emptyToUndefined(b.startTime),
         endTime: emptyToUndefined(b.endTime),
         hoursUsed: b.hoursUsed,
@@ -283,6 +303,7 @@ export const restoreData = mutation({
         createdBy: emptyToUndefined(b.createdBy),
         createdByEmail: emptyToUndefined(b.createdByEmail),
         createdAt: b.createdAt,
+        activityLog: b.activityLog,
       });
       billsInserted++;
     }

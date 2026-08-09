@@ -24,6 +24,7 @@ import {
 } from "../components/ui/Table";
 import { DashboardSkeleton } from "../components/skeletons/PageSkeletons";
 import { TABLE } from "../lib/ui-classes";
+import { formatRupee } from "../lib/money";
 import {
   Users,
   Receipt,
@@ -167,9 +168,9 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Total Farmers" value={data.totalCustomers} icon={<Users className="h-3.5 w-3.5" />} color="emerald" mono={false} />
         <StatCard label="Bills Created" value={data.totalBills} icon={<Receipt className="h-3.5 w-3.5" />} color="blue" mono={false} />
-        <StatCard label="Total Revenue" value={`${currency}${data.totalRevenue.toLocaleString()}`} icon={<IndianRupee className="h-3.5 w-3.5" />} color="amber" />
-        <StatCard label="Today's Revenue" value={`${currency}${data.todayRevenue.toLocaleString()}`} icon={<TrendingUp className="h-3.5 w-3.5" />} color="indigo" />
-        <StatCard label="Avg Bill Value" value={`${currency}${Math.round(data.averageBilling).toLocaleString()}`} icon={<Calculator className="h-3.5 w-3.5" />} color="pink" />
+        <StatCard label="Total Revenue" value={formatRupee(data.totalRevenue, currency)} icon={<IndianRupee className="h-3.5 w-3.5" />} color="amber" />
+        <StatCard label="Today's Revenue" value={formatRupee(data.todayRevenue, currency)} icon={<IndianRupee className="h-3.5 w-3.5" />} color="indigo" />
+        <StatCard label="Avg Bill Value" value={formatRupee(data.averageBilling, currency)} icon={<Calculator className="h-3.5 w-3.5" />} color="pink" />
       </div>
 
       {/* Charts Grid */}
@@ -216,8 +217,7 @@ export default function DashboardPage() {
                         {lStat.location}
                       </span>
                       <span className="font-mono text-slate-500 dark:text-slate-400 font-bold">
-                        {currency}
-                        {lStat.amount.toLocaleString()}
+                        {formatRupee(lStat.amount, currency)}
                       </span>
                     </div>
                     <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -284,7 +284,7 @@ export default function DashboardPage() {
                           {bill.paymentStatus === "PAID"
                             ? "Paid"
                             : bill.paymentStatus === "PARTIAL_PAID"
-                              ? "Partial Paid"
+                              ? `Partial · ${formatRupee(bill.amountPaid ?? 0, currency)}`
                               : "Not Paid"}
                         </span>
                       </div>
@@ -293,8 +293,7 @@ export default function DashboardPage() {
                           {bill.customerName}
                         </span>
                         <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">
-                          {currency}
-                          {bill.grandTotal}
+                          {formatRupee(bill.grandTotal, currency)}
                         </span>
                       </div>
                     </div>
@@ -344,13 +343,12 @@ export default function DashboardPage() {
                               {bill.paymentStatus === "PAID"
                                 ? "Paid"
                                 : bill.paymentStatus === "PARTIAL_PAID"
-                                  ? "Partial Paid"
+                                  ? `Partial · ${formatRupee(bill.amountPaid ?? 0, currency)}`
                                   : "Not Paid"}
                             </span>
                           </TableCell>
                           <TableCell className={TABLE.moneyRight}>
-                            {currency}
-                            {bill.grandTotal}
+                            {formatRupee(bill.grandTotal, currency)}
                           </TableCell>
                         </TableRow>
                       ))}

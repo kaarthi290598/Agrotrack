@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import type { Bill, Settings } from "../types";
+import { roundRupee, roundRupeeNonNegative } from "./money";
 
 type GstReportBill = Bill & {
   customerName?: string;
@@ -94,21 +95,29 @@ function makeRow(
   index: number,
   taxRate: number
 ): Array<string | number | null> {
-  const grandTotal = Number(bill.grandTotal) || 0;
-  const discount = Number(bill.discount) || 0;
+  const grandTotal = roundRupeeNonNegative(bill.grandTotal);
+  const discount = roundRupeeNonNegative(bill.discount);
   const tax =
-    taxRate > 0 ? (grandTotal * taxRate) / (100 + taxRate) : 0;
+    taxRate > 0 ? roundRupee((grandTotal * taxRate) / (100 + taxRate)) : 0;
   const paidAmount =
-    bill.amountPaid === undefined ? grandTotal : Number(bill.amountPaid) || 0;
+    bill.amountPaid === undefined
+      ? grandTotal
+      : roundRupeeNonNegative(bill.amountPaid);
   const pending =
-    bill.balanceAmount === undefined ? 0 : Number(bill.balanceAmount) || 0;
-  const subtotal1 = grandTotal + discount;
+    bill.balanceAmount === undefined
+      ? 0
+      : roundRupeeNonNegative(bill.balanceAmount);
+  const subtotal1 = roundRupee(grandTotal + discount);
   const discountPercent =
     subtotal1 > 0 ? (discount / subtotal1) * 100 : 0;
-  const packing = sumCharges(bill, (name) => name.includes("packing"));
-  const delivery = sumCharges(
-    bill,
-    (name) => name.includes("delivery") || name.includes("transport")
+  const packing = roundRupee(
+    sumCharges(bill, (name) => name.includes("packing"))
+  );
+  const delivery = roundRupee(
+    sumCharges(
+      bill,
+      (name) => name.includes("delivery") || name.includes("transport")
+    )
   );
   const customer = [bill.customerName, bill.customerLocation]
     .filter(Boolean)

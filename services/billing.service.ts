@@ -5,6 +5,7 @@ import { customerService } from "./customer.service";
 import { isBillCreatedByUser } from "../lib/utils";
 import { resolveBillCustomer } from "../lib/bill-customer";
 import { getAuthedConvexClient } from "../lib/convex-client";
+import { roundRupeeNonNegative } from "../lib/money";
 
 export const billingService = {
   getAll: async (_orgId?: string): Promise<Bill[]> => {
@@ -20,6 +21,7 @@ export const billingService = {
       customerLocation: b.customerLocation,
       customerState: b.customerState,
       date: b.date,
+      endDate: b.endDate,
       startTime: b.startTime,
       endTime: b.endTime,
       hoursUsed: b.hoursUsed,
@@ -35,6 +37,7 @@ export const billingService = {
       createdBy: b.createdBy,
       createdByEmail: b.createdByEmail,
       createdAt: b.createdAt,
+      activityLog: b.activityLog,
     }));
     saveDBBills(mapped);
     return mapped;
@@ -88,14 +91,14 @@ export const billingService = {
     const convex = await getAuthedConvexClient();
     const localBills = getDBBills();
     const target = localBills.find((b) => b.id === id);
-    const total = target?.grandTotal || 0;
+    const total = roundRupeeNonNegative(target?.grandTotal || 0);
     const paid =
       paymentStatus === "PARTIAL_PAID"
-        ? amountPaid || 0
+        ? roundRupeeNonNegative(amountPaid || 0)
         : paymentStatus === "PAID"
           ? total
           : 0;
-    const balance = Math.max(0, total - paid);
+    const balance = roundRupeeNonNegative(total - paid);
 
     const res = await convex.mutation(api.bills.updatePaymentStatus, {
       id: id as any,

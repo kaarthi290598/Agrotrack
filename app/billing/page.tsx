@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -11,6 +11,9 @@ import { billingService } from "../../services/billing.service";
 import { settingsService } from "../../services/settings.service";
 import { Customer, Bill, AdditionalCharge, Settings, BillStatus, PaymentMode, hasElevatedAccess } from "../../types";
 import { customerSnapshotFromCustomer, resolveBillCustomer } from "../../lib/bill-customer";
+import { calculateBillHours, isSameDayEndBeforeStart } from "../../lib/bill-hours";
+import { mobileNumberSchema, normalizeMobileInput } from "../../lib/mobile";
+import { formatRupee, roundRupee, roundRupeeNonNegative } from "../../lib/money";
 import { useToast } from "../../components/ui/Toast";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -58,9 +61,7 @@ import {
 // Schema for quick customer dialog
 const quickCustomerSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  mobile: z.string()
-    .min(10, "Mobile number must be at least 10 digits")
-    .regex(/^[0-9+\s-()]+$/, "Invalid phone number"),
+  mobile: mobileNumberSchema,
   location: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().optional()
@@ -90,6 +91,7 @@ function BillingFormInner() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
   const [billDate, setBillDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const [hoursUsed, setHoursUsed] = useState<string>("0");
   const [startTime, setStartTime] = useState<string>("");
   const [endTime, setEndTime] = useState<string>("");
@@ -115,6 +117,7 @@ function BillingFormInner() {
   const [isLocating, setIsLocating] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const customerSearchRef = useRef<HTMLInputElement>(null);
   
   // Generated invoice preview modal
   const [generatedInvoice, setGeneratedInvoice] = useState<(Bill & { customerName?: string; customerMobile?: string; customerLocation?: string; customerState?: string }) | null>(null);
@@ -169,6 +172,7 @@ function BillingFormInner() {
             }
             if (foundBill.date) {
               setBillDate(foundBill.date);
+              setEndDate(foundBill.endDate || foundBill.date);
             }
             setStartTime(foundBill.startTime || "");
             setEndTime(foundBill.endTime || "");
@@ -279,11 +283,40 @@ function BillingFormInner() {
     return `${newH < 10 ? `0${newH}` : `${newH}`}:${newM < 10 ? `0${newM}` : `${newM}`}`;
   };
 
+  const recalculateHours = (
+    nextStartDate = billDate,
+    nextEndDate = endDate,
+    nextStartTime = startTime,
+    nextEndTime = endTime
+  ) => {
+    if (!nextStartTime || !nextEndTime) return;
+    if (
+      isSameDayEndBeforeStart(
+        nextStartDate,
+        nextEndDate,
+        nextStartTime,
+        nextEndTime
+      )
+    ) {
+      setHoursUsed("0");
+      return;
+    }
+    const hours = calculateBillHours({
+      startDate: nextStartDate,
+      endDate: nextEndDate,
+      startTime: nextStartTime,
+      endTime: nextEndTime,
+    });
+    if (hours !== null) {
+      setHoursUsed(hours.toString());
+    }
+  };
+
   // Time Sync Handlers
   const handleStartTimeChange = (val: string) => {
     setStartTime(val);
     if (val && endTime) {
-      autoCalculateHours(val, endTime);
+      recalculateHours(billDate, endDate, val, endTime);
     } else if (val && parseFloat(hoursUsed) > 0) {
       const computedEnd = computeTimeWithOffset(val, parseFloat(hoursUsed));
       setEndTime(computedEnd);
@@ -293,23 +326,24 @@ function BillingFormInner() {
   const handleEndTimeChange = (val: string) => {
     setEndTime(val);
     if (startTime && val) {
-      autoCalculateHours(startTime, val);
+      recalculateHours(billDate, endDate, startTime, val);
     } else if (val && parseFloat(hoursUsed) > 0) {
       const computedStart = computeTimeWithOffset(val, -parseFloat(hoursUsed));
       setStartTime(computedStart);
     }
   };
 
-  const autoCalculateHours = (start: string, end: string) => {
-    const [startH, startM] = start.split(":").map(Number);
-    const [endH, endM] = end.split(":").map(Number);
-    if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return;
+  const handleBillDateChange = (val: string) => {
+    setBillDate(val);
+    const nextEnd = endDate < val ? val : endDate;
+    if (nextEnd !== endDate) setEndDate(nextEnd);
+    recalculateHours(val, nextEnd, startTime, endTime);
+  };
 
-    let diffMins = (endH * 60 + endM) - (startH * 60 + startM);
-    if (diffMins < 0) diffMins += 24 * 60; // Overnight wrap
-
-    const calculatedHours = Number((diffMins / 60).toFixed(2));
-    setHoursUsed(calculatedHours.toString());
+  const handleEndDateChange = (val: string) => {
+    const nextEnd = val < billDate ? billDate : val;
+    setEndDate(nextEnd);
+    recalculateHours(billDate, nextEnd, startTime, endTime);
   };
 
   // Add Custom Charge
@@ -318,7 +352,7 @@ function BillingFormInner() {
       toast({ type: "error", title: "Validation Error", description: "Charge name cannot be empty." });
       return;
     }
-    const amount = parseFloat(chargeAmount);
+    const amount = roundRupee(parseFloat(chargeAmount));
     if (isNaN(amount) || amount < 0) {
       toast({ type: "error", title: "Validation Error", description: "Charge amount must be positive." });
       return;
@@ -337,26 +371,31 @@ function BillingFormInner() {
 
   // Add Preset Charge Pill
   const handleAddPresetCharge = (preset: { name: string; amount: number }) => {
+    const amount = roundRupee(preset.amount);
     const newCharge: AdditionalCharge = {
       id: `chg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       name: preset.name,
-      amount: preset.amount
+      amount
     };
     setAdditionalCharges([...additionalCharges, newCharge]);
-    toast({ type: "success", title: "Charge Added", description: `Added ${preset.name} (+₹${preset.amount}).` });
+    toast({ type: "success", title: "Charge Added", description: `Added ${preset.name} (+${formatRupee(amount)}).` });
   };
 
   const handleDeleteCharge = (id: string) => {
     setAdditionalCharges(additionalCharges.filter((c) => c.id !== id));
   };
 
-  // Calculations
-  const hourlyRate = settings?.hourlyRate || 1200;
+  // Calculations (money rounded to nearest rupee for UI + DB)
+  const hourlyRate = roundRupee(settings?.hourlyRate || 1200);
   const hoursNum = parseFloat(hoursUsed) || 0;
-  const usageCost = hoursNum * hourlyRate;
-  const extraChargesCost = additionalCharges.reduce((acc, c) => acc + c.amount, 0);
-  const discountVal = parseFloat(discount) || 0;
-  const grandTotal = usageCost + extraChargesCost - discountVal;
+  const usageCost = roundRupee(hoursNum * hourlyRate);
+  const extraChargesCost = roundRupee(
+    additionalCharges.reduce((acc, c) => acc + c.amount, 0)
+  );
+  const discountVal = roundRupeeNonNegative(parseFloat(discount) || 0);
+  const grandTotal = roundRupeeNonNegative(
+    usageCost + extraChargesCost - discountVal
+  );
   const currencySymbol = settings?.currencySymbol || "₹";
 
   // Quick Add Customer Form Submit
@@ -430,6 +469,7 @@ function BillingFormInner() {
         customerId: selectedCustomerId,
         ...customerSnapshot,
         date: billDate || new Date().toISOString().split("T")[0],
+        endDate: billDate || new Date().toISOString().split("T")[0],
         startTime,
         endTime: undefined,
         hoursUsed: 0,
@@ -465,6 +505,9 @@ function BillingFormInner() {
     setSelectedCustomerId(bill.customerId);
     setCustomerSearchQuery(cust?.name || "");
     setStartTime(bill.startTime || "");
+    setBillDate(bill.date || new Date().toISOString().split("T")[0]);
+    const today = new Date().toISOString().split("T")[0];
+    setEndDate(today);
     
     const now = new Date();
     const currentH = now.getHours().toString().padStart(2, "0");
@@ -473,7 +516,7 @@ function BillingFormInner() {
     setEndTime(nowStr);
 
     if (bill.startTime) {
-      autoCalculateHours(bill.startTime, nowStr);
+      recalculateHours(bill.date || today, today, bill.startTime, nowStr);
     }
 
     setEditingBillId(bill.id);
@@ -504,6 +547,29 @@ function BillingFormInner() {
       return;
     }
 
+    if (
+      startTime &&
+      endTime &&
+      isSameDayEndBeforeStart(billDate, endDate, startTime, endTime)
+    ) {
+      toast({
+        type: "error",
+        title: "Validation Error",
+        description:
+          "End time is before start time on the same day. Set End Date to the next day for overnight sessions.",
+      });
+      return;
+    }
+
+    if (endDate < billDate) {
+      toast({
+        type: "error",
+        title: "Validation Error",
+        description: "End date cannot be before start date.",
+      });
+      return;
+    }
+
     if (discountVal < 0 || discountVal > (usageCost + extraChargesCost)) {
       toast({ type: "error", title: "Validation Error", description: "Discount cannot exceed the total bill amount." });
       return;
@@ -519,8 +585,18 @@ function BillingFormInner() {
       return;
     }
 
-    const calculatedAmountPaid = paymentStatus === "PARTIAL_PAID" ? parsedPartialPaid : paymentStatus === "PAID" ? grandTotal : 0;
-    const calculatedBalance = paymentStatus === "PARTIAL_PAID" ? Math.max(0, grandTotal - parsedPartialPaid) : paymentStatus === "PAID" ? 0 : grandTotal;
+    const calculatedAmountPaid =
+      paymentStatus === "PARTIAL_PAID"
+        ? roundRupeeNonNegative(parsedPartialPaid)
+        : paymentStatus === "PAID"
+          ? grandTotal
+          : 0;
+    const calculatedBalance =
+      paymentStatus === "PARTIAL_PAID"
+        ? roundRupeeNonNegative(grandTotal - calculatedAmountPaid)
+        : paymentStatus === "PAID"
+          ? 0
+          : grandTotal;
 
     setIsGenerating(true);
     try {
@@ -534,6 +610,7 @@ function BillingFormInner() {
           customerId: selectedCustomerId,
           ...customerSnapshot,
           date: billDate || new Date().toISOString().split("T")[0],
+          endDate: endDate || billDate || new Date().toISOString().split("T")[0],
           startTime: startTime || undefined,
           endTime: endTime || undefined,
           hoursUsed: hoursNum,
@@ -580,6 +657,7 @@ function BillingFormInner() {
         customerId: selectedCustomerId,
         ...customerSnapshot,
         date: billDate || new Date().toISOString().split("T")[0],
+        endDate: endDate || billDate || new Date().toISOString().split("T")[0],
         startTime: startTime || undefined,
         endTime: endTime || undefined,
         hoursUsed: hoursNum,
@@ -626,9 +704,11 @@ function BillingFormInner() {
   };
 
   const handleResetForm = () => {
+    const today = new Date().toISOString().split("T")[0];
     setSelectedCustomerId("");
     setCustomerSearchQuery("");
-    setBillDate(new Date().toISOString().split("T")[0]);
+    setBillDate(today);
+    setEndDate(today);
     setStartTime("");
     setEndTime("");
     setHoursUsed("0");
@@ -867,6 +947,7 @@ function BillingFormInner() {
                 {/* Farmer Search Input */}
                 <div className="relative">
                   <Input
+                    ref={customerSearchRef}
                     placeholder="Type farmer name, mobile number, or village..."
                     value={customerSearchQuery}
                     onChange={(e) => {
@@ -925,6 +1006,10 @@ function BillingFormInner() {
                       onClick={() => {
                         setSelectedCustomerId("");
                         setCustomerSearchQuery("");
+                        setIsDropdownOpen(true);
+                        requestAnimationFrame(() => {
+                          customerSearchRef.current?.focus();
+                        });
                       }}
                       className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
                     >
@@ -956,21 +1041,16 @@ function BillingFormInner() {
                   placeholder="e.g. ERT-123"
                   className="font-mono"
                 />
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                   <DatePicker
-                    label="Billing Date *"
+                    label="Start Date *"
                     value={billDate}
-                    onChange={(val) => setBillDate(val)}
+                    onChange={handleBillDateChange}
                   />
-                  <TimePicker
-                    label="Start Time"
-                    value={startTime}
-                    onChange={(val) => handleStartTimeChange(val)}
-                  />
-                  <TimePicker
-                    label="End Time"
-                    value={endTime}
-                    onChange={(val) => handleEndTimeChange(val)}
+                  <DatePicker
+                    label="End Date *"
+                    value={endDate}
+                    onChange={handleEndDateChange}
                   />
                   <Input
                     label="Total Hours (Auto) *"
@@ -982,7 +1062,24 @@ function BillingFormInner() {
                     placeholder="0.00"
                     className="bg-slate-50 dark:bg-slate-800/60 cursor-not-allowed font-mono font-extrabold text-slate-900 dark:text-slate-100"
                   />
+                  <TimePicker
+                    label="Start Time"
+                    value={startTime}
+                    onChange={(val) => handleStartTimeChange(val)}
+                  />
+                  <TimePicker
+                    label="End Time"
+                    value={endTime}
+                    onChange={(val) => handleEndTimeChange(val)}
+                  />
                 </div>
+                {startTime &&
+                  endTime &&
+                  isSameDayEndBeforeStart(billDate, endDate, startTime, endTime) && (
+                    <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
+                      End time is before start on the same day. Choose a later End Date for overnight work.
+                    </p>
+                  )}
               </CardContent>
             </Card>
 
@@ -1073,12 +1170,12 @@ function BillingFormInner() {
                 <div className="space-y-2 border-b border-slate-100 dark:border-slate-800 pb-3 text-xs">
                   <div className="flex justify-between text-slate-600 dark:text-slate-400">
                     <span>Usage Subtotal ({hoursNum} hrs × {currencySymbol}{hourlyRate}):</span>
-                    <span className="font-bold text-slate-900 dark:text-white font-mono">{currencySymbol}{usageCost.toLocaleString()}</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">{formatRupee(usageCost, currencySymbol)}</span>
                   </div>
                   {extraChargesCost > 0 && (
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
                       <span>Supplementary Charges:</span>
-                      <span className="font-bold text-emerald-600 font-mono">+{currencySymbol}{extraChargesCost.toLocaleString()}</span>
+                      <span className="font-bold text-emerald-600 font-mono">+{formatRupee(extraChargesCost, currencySymbol)}</span>
                     </div>
                   )}
                 </div>
@@ -1099,7 +1196,7 @@ function BillingFormInner() {
                   <div className="flex justify-between items-center">
                     <span className="font-extrabold text-sm text-slate-900 dark:text-white">Grand Invoice Total:</span>
                     <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                      {currencySymbol}{Math.max(0, grandTotal).toLocaleString()}
+                      {formatRupee(grandTotal, currencySymbol)}
                     </span>
                   </div>
                 </div>
@@ -1178,7 +1275,10 @@ function BillingFormInner() {
                         <div className="flex justify-between items-center rounded-xl bg-orange-50 dark:bg-orange-950/30 p-2.5 border border-orange-200 dark:border-orange-800 text-xs font-semibold">
                           <span className="text-orange-900 dark:text-orange-300">Remaining Balance:</span>
                           <span className="font-mono text-orange-700 dark:text-orange-400 font-extrabold text-sm">
-                            {currencySymbol}{Math.max(0, grandTotal - (parseFloat(partialPaidAmount) || 0)).toLocaleString()}
+                            {formatRupee(
+                              grandTotal - roundRupee(parseFloat(partialPaidAmount) || 0),
+                              currencySymbol
+                            )}
                           </span>
                         </div>
                       )}
@@ -1402,7 +1502,7 @@ function BillingFormInner() {
               {endTime && endTime.trim() !== "" ? "Grand Total" : "Mode"}
             </span>
             <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-              {endTime && endTime.trim() !== "" ? `${currencySymbol}${Math.max(0, grandTotal).toLocaleString()}` : "Check-In"}
+              {endTime && endTime.trim() !== "" ? formatRupee(grandTotal, currencySymbol) : "Check-In"}
             </span>
           </div>
 
@@ -1473,9 +1573,16 @@ function BillingFormInner() {
           <Input
             label="Mobile Number *"
             type="tel"
+            inputMode="numeric"
+            maxLength={10}
             placeholder="10-digit mobile"
             error={quickCustErrors.mobile?.message}
-            {...registerQuickCust("mobile")}
+            {...registerQuickCust("mobile", {
+              setValueAs: (v) => normalizeMobileInput(String(v ?? "")),
+              onChange: (e) => {
+                e.target.value = normalizeMobileInput(e.target.value);
+              },
+            })}
           />
           
           <div className="flex items-center justify-between pt-1">

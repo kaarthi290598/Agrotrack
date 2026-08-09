@@ -21,6 +21,7 @@ export type BackupBillRow = {
   customerLocation: string;
   customerState: string;
   date: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   hoursUsed: number;
@@ -36,6 +37,7 @@ export type BackupBillRow = {
   createdBy: string;
   createdByEmail: string;
   createdAt: number;
+  activityLog: string; // JSON
 };
 
 export type BackupSettingsRow = {
@@ -61,8 +63,19 @@ export type BackupSnapshot = {
   endDate?: string;
   customers: BackupCustomerRow[];
   bills: Array<
-    Omit<BackupBillRow, "extraCharges"> & {
+    Omit<BackupBillRow, "extraCharges" | "activityLog"> & {
       extraCharges: { id: string; name: string; amount: number }[];
+      activityLog?: Array<{
+        at: number;
+        byName: string;
+        byUserId?: string;
+        action:
+          | "CREATED"
+          | "UPDATED"
+          | "APPROVED"
+          | "REJECTED"
+          | "PAYMENT_UPDATED";
+      }>;
     }
   >;
   settings: BackupSettingsRow | null;
@@ -94,6 +107,7 @@ export type RestorePayload = {
     customerLocation?: string;
     customerState?: string;
     date: string;
+    endDate?: string;
     startTime?: string;
     endTime?: string;
     hoursUsed: number;
@@ -109,6 +123,12 @@ export type RestorePayload = {
     createdBy?: string;
     createdByEmail?: string;
     createdAt: number;
+    activityLog?: Array<{
+      at: number;
+      byName: string;
+      byUserId?: string;
+      action: "CREATED" | "UPDATED" | "APPROVED" | "REJECTED" | "PAYMENT_UPDATED";
+    }>;
   }>;
   settings?: BackupSettingsRow;
 };
@@ -156,6 +176,7 @@ export const BILL_HEADERS = [
   "customerLocation",
   "customerState",
   "date",
+  "endDate",
   "startTime",
   "endTime",
   "hoursUsed",
@@ -171,6 +192,7 @@ export const BILL_HEADERS = [
   "createdBy",
   "createdByEmail",
   "createdAt",
+  "activityLog",
 ] as const;
 
 export const SETTINGS_HEADERS = [
@@ -213,6 +235,7 @@ export function billsToRows(bills: BackupSnapshot["bills"]) {
     customerLocation: b.customerLocation ?? "",
     customerState: b.customerState ?? "",
     date: b.date,
+    endDate: b.endDate ?? b.date ?? "",
     startTime: b.startTime ?? "",
     endTime: b.endTime ?? "",
     hoursUsed: b.hoursUsed,
@@ -228,6 +251,7 @@ export function billsToRows(bills: BackupSnapshot["bills"]) {
     createdBy: b.createdBy ?? "",
     createdByEmail: b.createdByEmail ?? "",
     createdAt: b.createdAt,
+    activityLog: JSON.stringify(b.activityLog ?? []),
   }));
 }
 
@@ -350,6 +374,43 @@ const BILL_STATUSES = new Set([
 const PAYMENT_STATUSES = new Set(["PAID", "UNPAID", "PARTIAL_PAID"]);
 const PAYMENT_MODES = new Set(["CASH", "ONLINE"]);
 
+function parseActivityLog(
+  raw: unknown
+): RestorePayload["bills"][0]["activityLog"] {
+  if (raw == null || raw === "") return undefined;
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return undefined;
+    const actions = new Set([
+      "CREATED",
+      "UPDATED",
+      "APPROVED",
+      "REJECTED",
+      "PAYMENT_UPDATED",
+    ]);
+    return parsed
+      .filter(
+        (e) =>
+          e &&
+          typeof e === "object" &&
+          typeof e.at === "number" &&
+          typeof e.byName === "string" &&
+          actions.has(String(e.action))
+      )
+      .map((e) => ({
+        at: e.at as number,
+        byName: String(e.byName),
+        byUserId:
+          typeof e.byUserId === "string" ? e.byUserId : undefined,
+        action: e.action as NonNullable<
+          RestorePayload["bills"][0]["activityLog"]
+        >[0]["action"],
+      }));
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseExtraCharges(raw: unknown): { id: string; name: string; amount: number }[] {
   if (Array.isArray(raw)) {
     return raw.map((c, i) => ({
@@ -422,6 +483,7 @@ export function rowsToRestorePayload(input: {
       customerLocation: optStr(r.customerLocation),
       customerState: optStr(r.customerState),
       date: String(r.date ?? "").trim() || new Date().toISOString().slice(0, 10),
+      endDate: optStr(r.endDate),
       startTime: optStr(r.startTime),
       endTime: optStr(r.endTime),
       hoursUsed: num(r.hoursUsed),
@@ -439,6 +501,7 @@ export function rowsToRestorePayload(input: {
       createdBy: optStr(r.createdBy),
       createdByEmail: optStr(r.createdByEmail),
       createdAt: num(r.createdAt, Date.now()),
+      activityLog: parseActivityLog(r.activityLog),
     };
   });
 

@@ -55,7 +55,10 @@ export default defineSchema({
     customerMobile: v.optional(v.string()),
     customerLocation: v.optional(v.string()),
     customerState: v.optional(v.string()),
+    /** Start / billing date (YYYY-MM-DD). */
     date: v.string(),
+    /** End date (YYYY-MM-DD). Missing = same as `date`. */
+    endDate: v.optional(v.string()),
     startTime: v.optional(v.string()),
     endTime: v.optional(v.string()),
     hoursUsed: v.number(),
@@ -89,6 +92,23 @@ export default defineSchema({
     createdBy: v.optional(v.string()),
     createdByEmail: v.optional(v.string()),
     createdAt: v.number(),
+    /** Who created / approved / rejected / edited — shown via UI toggle, not table columns. */
+    activityLog: v.optional(
+      v.array(
+        v.object({
+          at: v.number(),
+          byName: v.string(),
+          byUserId: v.optional(v.string()),
+          action: v.union(
+            v.literal("CREATED"),
+            v.literal("UPDATED"),
+            v.literal("APPROVED"),
+            v.literal("REJECTED"),
+            v.literal("PAYMENT_UPDATED")
+          ),
+        })
+      )
+    ),
   })
     .index("by_org", ["orgId"])
     .index("by_org_invoiceNumber", ["orgId", "invoiceNumber"])

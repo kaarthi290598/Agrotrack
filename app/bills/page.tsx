@@ -19,12 +19,12 @@ import { TimePicker } from "../../components/ui/TimePicker";
 import { DateRange, DateRangePicker, makeDateRange } from "../../components/ui/DateRangePicker";
 import { StatCard } from "../../components/ui/StatCard";
 import { ListPageSkeleton } from "../../components/skeletons/PageSkeletons";
-import { BillCreatorCell } from "../../components/bills/BillCreatorCell";
+import { BillActivityLog } from "../../components/bills/BillActivityLog";
 import { InvoicePrintArea, InvoicePreviewContent, invoiceViewButtonClass } from "../../components/bills/InvoiceDocument";
-import { useOrgMemberLookup } from "../../hooks/useOrgMemberLookup";
 import { downloadInvoicePdf } from "../../lib/invoice-pdf";
 import { FILTER_SEARCH_CLASS, TABLE } from "../../lib/ui-classes";
 import { resolveBillCustomer } from "../../lib/bill-customer";
+import { formatRupee, roundRupee, roundRupeeNonNegative } from "../../lib/money";
 import { 
   ShieldCheck, 
   CheckCircle2, 
@@ -42,9 +42,21 @@ import {
   IndianRupee,
   Plus,
   ArrowUpDown,
-  RotateCcw
+  RotateCcw,
+  History
 } from "lucide-react";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
+
+function paymentLabel(
+  bill: Bill,
+  currencySymbol: string
+): string {
+  if (bill.paymentStatus === "PAID") return "✓ Paid";
+  if (bill.paymentStatus === "PARTIAL_PAID") {
+    return `Partial · ${formatRupee(bill.amountPaid ?? 0, currencySymbol)}`;
+  }
+  return "Unpaid";
+}
 
 function BillsListInner() {
   const { orgId, isLoaded: isClerkLoaded } = useClerkAuth();
@@ -54,7 +66,6 @@ function BillsListInner() {
   const { user } = useAuth();
   const isAdmin = isAppAdmin(user?.role);
   const elevated = hasElevatedAccess(user?.role);
-  const memberLookup = useOrgMemberLookup();
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -70,6 +81,7 @@ function BillsListInner() {
 
   // Multi-Select Bulk Actions State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [activityBill, setActivityBill] = useState<Bill | null>(null);
 
   // Partial Payment Modal State
   const [paymentModalBill, setPaymentModalBill] = useState<Bill | null>(null);
@@ -295,8 +307,9 @@ function BillsListInner() {
   // Save Payment Status (Full / Unpaid / Partial)
   const handleSavePaymentStatus = async () => {
     if (!paymentModalBill) return;
-    const paidNum = parseFloat(partialPaidAmount) || 0;
-    if (partialPaymentStatus === "PARTIAL_PAID" && (paidNum < 0 || paidNum > paymentModalBill.grandTotal)) {
+    const paidNum = roundRupeeNonNegative(parseFloat(partialPaidAmount) || 0);
+    const billTotal = roundRupeeNonNegative(paymentModalBill.grandTotal);
+    if (partialPaymentStatus === "PARTIAL_PAID" && (paidNum < 0 || paidNum > billTotal)) {
       toast({ type: "error", title: "Validation Error", description: "Partial paid amount must be between 0 and bill Grand Total." });
       return;
     }
@@ -336,8 +349,18 @@ function BillsListInner() {
               ? (updated.paymentMode ?? partialPaymentMode) || undefined
               : undefined,
           invoiceNumber: updated.invoiceNumber ?? viewInvoice.invoiceNumber,
-          amountPaid: partialPaymentStatus === "PARTIAL_PAID" ? paidNum : partialPaymentStatus === "PAID" ? viewInvoice.grandTotal : 0,
-          balanceAmount: partialPaymentStatus === "PARTIAL_PAID" ? Math.max(0, viewInvoice.grandTotal - paidNum) : partialPaymentStatus === "PAID" ? 0 : viewInvoice.grandTotal
+          amountPaid:
+            partialPaymentStatus === "PARTIAL_PAID"
+              ? paidNum
+              : partialPaymentStatus === "PAID"
+                ? roundRupeeNonNegative(viewInvoice.grandTotal)
+                : 0,
+          balanceAmount:
+            partialPaymentStatus === "PARTIAL_PAID"
+              ? roundRupeeNonNegative(viewInvoice.grandTotal - paidNum)
+              : partialPaymentStatus === "PAID"
+                ? 0
+                : roundRupeeNonNegative(viewInvoice.grandTotal),
         });
       }
     } catch (err: any) {
@@ -440,7 +463,7 @@ function BillsListInner() {
       {/* ═══════════ Stat Cards ═══════════ */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Total Bills" value={userBills.length} icon={<Receipt className="h-3.5 w-3.5" />} color="emerald" mono={false} />
-        <StatCard label="Total Value" value={`${currencySymbol}${totalValue.toLocaleString()}`} icon={<IndianRupee className="h-3.5 w-3.5" />} color="blue" />
+        <StatCard label="Total Value" value={formatRupee(totalValue, currencySymbol)} icon={<IndianRupee className="h-3.5 w-3.5" />} color="blue" />
         <StatCard label="Paid" value={paidBillsCount} icon={<CheckCircle2 className="h-3.5 w-3.5" />} color="violet" mono={false} />
         <StatCard label="Pending" value={pendingCount} icon={<Clock className="h-3.5 w-3.5" />} color="amber" mono={false} />
       </div>
@@ -549,19 +572,21 @@ function BillsListInner() {
                               <span className="font-mono font-bold text-sm text-slate-900 dark:text-white break-all">
                                 {bill.invoiceNumber || "Pending"}
                               </span>
-                              <span className="text-[10px] text-slate-400 shrink-0">{bill.date}</span>
+                              <span className="text-[10px] text-slate-400 shrink-0">
+                                {bill.date}
+                                {bill.endDate && bill.endDate !== bill.date
+                                  ? ` → ${bill.endDate}`
+                                  : ""}
+                              </span>
                             </div>
                             <p className="text-[11px] font-mono font-semibold text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                               ERT: {bill.ertNumber || "—"}
                             </p>
                             <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mt-0.5 truncate">{resolved.customerName}</p>
-                            <div className="mt-1.5">
-                              <BillCreatorCell bill={bill} lookup={memberLookup} compact className="gap-1.5" />
-                            </div>
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className="font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400 whitespace-nowrap">{currencySymbol}{bill.grandTotal}</span>
+                          <span className="font-mono font-extrabold text-sm text-emerald-600 dark:text-emerald-400 whitespace-nowrap">{formatRupee(bill.grandTotal, currencySymbol)}</span>
                           {bill.status === "APPROVED" ? (
                             <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">Approved</span>
                           ) : bill.status === "PENDING_APPROVAL" ? (
@@ -575,9 +600,10 @@ function BillsListInner() {
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/60">
                         <button type="button" onClick={() => handleOpenPaymentModal(bill)} className={`text-[10px] font-bold px-2.5 py-1 rounded-full cursor-pointer shrink-0 ${bill.paymentStatus === "PAID" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : bill.paymentStatus === "PARTIAL_PAID" ? "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400" : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"}`}>
-                          {bill.paymentStatus === "PAID" ? "✓ Paid" : bill.paymentStatus === "PARTIAL_PAID" ? "Partial" : "Unpaid"}
+                          {paymentLabel(bill, currencySymbol)}
                         </button>
                         <div className="flex items-center gap-1 flex-wrap justify-end">
+                          <button type="button" onClick={() => setActivityBill(bill)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Activity log"><History className="h-3.5 w-3.5" /></button>
                           <button type="button" onClick={() => handleViewInvoice(bill)} className={invoiceViewButtonClass} title="View Invoice Detail"><Eye className="h-4 w-4" /></button>
                           {elevated && bill.status === "PENDING_APPROVAL" && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
                           {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || elevated) && (<button type="button" onClick={() => handleOpenEditModal(bill)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>)}
@@ -600,7 +626,6 @@ function BillsListInner() {
                       <TableHead className="whitespace-nowrap">Invoice</TableHead>
                       <TableHead className="whitespace-nowrap">ERT</TableHead>
                       <TableHead>Farmer</TableHead>
-                      <TableHead className="hidden lg:table-cell whitespace-nowrap">Created By</TableHead>
                       <TableHead className="whitespace-nowrap">Date</TableHead>
                       <TableHead className="hidden xl:table-cell whitespace-nowrap">Usage</TableHead>
                       <TableHead className="whitespace-nowrap">Amount</TableHead>
@@ -633,17 +658,17 @@ function BillsListInner() {
                             <p className={`${TABLE.name} truncate`}>{resolved.customerName}</p>
                             <span className="text-[10px] text-slate-400 truncate block">{resolved.customerMobile}</span>
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell">
-                            <BillCreatorCell bill={bill} lookup={memberLookup} compact />
-                          </TableCell>
                           <TableCell className={`${TABLE.muted} whitespace-nowrap`}>
-                            <div>{bill.date}</div>
+                            <div>
+                              {bill.date}
+                              {bill.endDate && bill.endDate !== bill.date ? ` → ${bill.endDate}` : ""}
+                            </div>
                             {bill.startTime && <span className="text-[10px] text-slate-400">{bill.startTime} – {bill.endTime || "Live"}</span>}
                           </TableCell>
                           <TableCell className={`${TABLE.muted} hidden xl:table-cell whitespace-nowrap`}>
                             {bill.hoursUsed}h × {currencySymbol}{bill.hourlyRate}
                           </TableCell>
-                          <TableCell className={`${TABLE.money} whitespace-nowrap`}>{currencySymbol}{bill.grandTotal}</TableCell>
+                          <TableCell className={`${TABLE.money} whitespace-nowrap`}>{formatRupee(bill.grandTotal, currencySymbol)}</TableCell>
                           <TableCell className="whitespace-nowrap">
                             {bill.status === "APPROVED" ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"><CheckCircle2 className="h-3 w-3" /> Approved</span>
@@ -657,11 +682,12 @@ function BillsListInner() {
                           </TableCell>
                           <TableCell className="whitespace-nowrap">
                             <button type="button" onClick={() => handleOpenPaymentModal(bill)} className={`text-[10px] font-bold px-2 py-0.5 rounded cursor-pointer transition-colors ${bill.paymentStatus === "PAID" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400" : bill.paymentStatus === "PARTIAL_PAID" ? "bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950/40 dark:text-orange-400" : "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-400"}`} title="Manage payment">
-                              {bill.paymentStatus === "PAID" ? "✓ Paid" : bill.paymentStatus === "PARTIAL_PAID" ? "Partial" : "Unpaid"}
+                              {paymentLabel(bill, currencySymbol)}
                             </button>
                           </TableCell>
                           <TableCell className={`text-right sticky right-0 z-10 ${rowBg}`}>
                             <div className="flex items-center justify-end gap-1 flex-nowrap">
+                              <button type="button" onClick={() => setActivityBill(bill)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Activity log"><History className="h-3.5 w-3.5" /></button>
                               <button type="button" onClick={() => handleViewInvoice(bill)} className={invoiceViewButtonClass} title="View Invoice Detail"><Eye className="h-4 w-4" /></button>
                               {elevated && bill.status === "PENDING_APPROVAL" && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1 bg-rose-600 text-white rounded-md hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
                               {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || elevated) && (<button type="button" onClick={() => handleOpenEditModal(bill)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>)}
@@ -754,7 +780,7 @@ function BillsListInner() {
                       ? `ERT ${paymentModalBill.ertNumber}`
                       : "Bill"}
                 </span>
-                <span className="text-emerald-600 font-mono text-sm">Total: {currencySymbol}{paymentModalBill.grandTotal}</span>
+                <span className="text-emerald-600 font-mono text-sm">Total: {formatRupee(paymentModalBill.grandTotal, currencySymbol)}</span>
               </div>
             </div>
 
@@ -832,7 +858,11 @@ function BillsListInner() {
                   <div className="flex justify-between items-center rounded-xl bg-orange-50 dark:bg-orange-950/30 p-3 border border-orange-200 dark:border-orange-800 text-xs font-semibold">
                     <span className="text-orange-900 dark:text-orange-300">Remaining Balance Due:</span>
                     <span className="font-mono text-orange-700 dark:text-orange-400 font-extrabold text-sm">
-                      {currencySymbol}{Math.max(0, paymentModalBill.grandTotal - (parseFloat(partialPaidAmount) || 0)).toLocaleString()}
+                      {formatRupee(
+                        paymentModalBill.grandTotal -
+                          roundRupee(parseFloat(partialPaidAmount) || 0),
+                        currencySymbol
+                      )}
                     </span>
                   </div>
                 )}
@@ -883,11 +913,48 @@ function BillsListInner() {
         }
       >
         {viewInvoice && settings && (
-          <InvoicePreviewContent
-            bill={viewInvoice}
-            settings={settings}
-            currencySymbol={currencySymbol}
-          />
+          <div className="space-y-4">
+            <InvoicePreviewContent
+              bill={viewInvoice}
+              settings={settings}
+              currencySymbol={currencySymbol}
+            />
+            <button
+              type="button"
+              onClick={() => setActivityBill(viewInvoice)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-emerald-700 dark:text-slate-300 dark:hover:text-emerald-400 cursor-pointer"
+            >
+              <History className="h-3.5 w-3.5" />
+              View activity log
+            </button>
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        isOpen={activityBill !== null}
+        onClose={() => setActivityBill(null)}
+        title="Bill activity"
+        className="max-w-md text-left"
+        footer={
+          <Button variant="outline" onClick={() => setActivityBill(null)} className="cursor-pointer">
+            Close
+          </Button>
+        }
+      >
+        {activityBill && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+              <p className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                {activityBill.invoiceNumber || activityBill.ertNumber || "Pending invoice"}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                {activityBill.customerName || "Farmer"}
+                {activityBill.date ? ` · ${activityBill.date}` : ""}
+              </p>
+            </div>
+            <BillActivityLog bill={activityBill} />
+          </div>
         )}
       </Dialog>
 

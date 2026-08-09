@@ -1,5 +1,7 @@
 /** Tax-exclusive invoice totals: grandTotal is the taxable subtotal. */
 
+import { formatRupee, roundRupee, roundRupeeNonNegative } from "./money";
+
 export type InvoiceTaxBreakdown = {
   subtotal: number;
   taxRate: number;
@@ -13,11 +15,11 @@ export function computeInvoiceTax(
   grandTotal: number,
   defaultTax: number
 ): InvoiceTaxBreakdown {
-  const subtotal = Math.max(0, Number(grandTotal) || 0);
+  const subtotal = roundRupeeNonNegative(grandTotal);
   const taxRate = Math.max(0, Number(defaultTax) || 0);
-  const tax = taxRate > 0 ? (subtotal * taxRate) / 100 : 0;
-  const cgst = tax / 2;
-  const sgst = tax / 2;
+  const tax = taxRate > 0 ? roundRupee((subtotal * taxRate) / 100) : 0;
+  const cgst = roundRupee(tax / 2);
+  const sgst = tax - cgst; // keep CGST+SGST = tax after round
   return {
     subtotal,
     taxRate,
@@ -32,11 +34,7 @@ export function formatInvoiceMoney(
   amount: number,
   currencySymbol: string
 ): string {
-  const rounded = Math.round((Number(amount) || 0) * 100) / 100;
-  return `${currencySymbol}${rounded.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatRupee(amount, currencySymbol);
 }
 
 export function formatInvoiceDate(date: string): string {

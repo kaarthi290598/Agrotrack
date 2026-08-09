@@ -100,6 +100,20 @@ export function getDefaultPath(role: UserRole | null | undefined): string {
   return canAccessDashboard(role) ? "/" : "/billing";
 }
 
+export type BillActivityAction =
+  | "CREATED"
+  | "UPDATED"
+  | "APPROVED"
+  | "REJECTED"
+  | "PAYMENT_UPDATED";
+
+export interface BillActivityEntry {
+  at: number;
+  byName: string;
+  byUserId?: string;
+  action: BillActivityAction;
+}
+
 export interface Bill {
   id: string;
   /** Present only after Fully Paid; never regenerated once set. */
@@ -111,7 +125,9 @@ export interface Bill {
   customerMobile?: string;
   customerLocation?: string;
   customerState?: string;
-  date: string; // ISO string or YYYY-MM-DD
+  date: string; // ISO string or YYYY-MM-DD (start date)
+  /** End date YYYY-MM-DD; missing means same as `date`. */
+  endDate?: string;
   startTime?: string;
   endTime?: string;
   hoursUsed: number;
@@ -127,6 +143,7 @@ export interface Bill {
   createdBy?: string;
   createdByEmail?: string;
   createdAt: number;
+  activityLog?: BillActivityEntry[];
 }
 
 export interface Settings {

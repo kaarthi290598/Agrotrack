@@ -41,6 +41,7 @@ import { InvoicePrintArea, InvoicePreviewContent, invoiceViewButtonClass } from 
 import { useOrgMemberLookup } from "../../hooks/useOrgMemberLookup";
 import { downloadInvoicePdf } from "../../lib/invoice-pdf";
 import { downloadGstSalesReport } from "../../lib/gst-report";
+import { formatRupee } from "../../lib/money";
 
 type EnrichedBill = Bill & {
   customerName?: string;
@@ -340,9 +341,9 @@ export default function ReportsPage() {
 
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total Invoiced" value={`${currencySymbol}${totalInvoiced.toLocaleString()}`} icon={<IndianRupee className="h-3.5 w-3.5" />} color="emerald" />
-        <StatCard label="Collected" value={`${currencySymbol}${paidRevenue.toLocaleString()}`} icon={<IndianRupee className="h-3.5 w-3.5" />} color="teal" />
-        <StatCard label="Outstanding" value={`${currencySymbol}${unpaidRevenue.toLocaleString()}`} icon={<IndianRupee className="h-3.5 w-3.5" />} color="amber" />
+        <StatCard label="Total Invoiced" value={formatRupee(totalInvoiced, currencySymbol)} icon={<IndianRupee className="h-3.5 w-3.5" />} color="emerald" />
+        <StatCard label="Collected" value={formatRupee(paidRevenue, currencySymbol)} icon={<IndianRupee className="h-3.5 w-3.5" />} color="teal" />
+        <StatCard label="Outstanding" value={formatRupee(unpaidRevenue, currencySymbol)} icon={<IndianRupee className="h-3.5 w-3.5" />} color="amber" />
         <StatCard label="Total Usage" value={`${totalHours.toLocaleString()} hrs`} icon={<Clock className="h-3.5 w-3.5" />} color="sky" />
       </div>
 
@@ -507,8 +508,7 @@ export default function ReportsPage() {
 
                     <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
                       <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
-                        {currencySymbol}
-                        {bill.grandTotal}
+                        {formatRupee(bill.grandTotal, currencySymbol)}
                       </span>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -570,8 +570,7 @@ export default function ReportsPage() {
                           <TableCell className={TABLE.muted}>{bill.date}</TableCell>
                           <TableCell className={`hidden md:table-cell ${TABLE.muted}`}>{bill.hoursUsed} hrs</TableCell>
                           <TableCell className={TABLE.money}>
-                            {currencySymbol}
-                            {bill.grandTotal}
+                            {formatRupee(bill.grandTotal, currencySymbol)}
                           </TableCell>
                           <TableCell>
                             <PaymentStatusLabel status={bill.paymentStatus} />

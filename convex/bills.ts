@@ -20,6 +20,19 @@ const paymentModeValidator = v.union(
 );
 
 type PaymentMode = "CASH" | "ONLINE";
+type ActivityAction =
+  | "CREATED"
+  | "UPDATED"
+  | "APPROVED"
+  | "REJECTED"
+  | "PAYMENT_UPDATED";
+
+type ActivityEntry = {
+  at: number;
+  byName: string;
+  byUserId?: string;
+  action: ActivityAction;
+};
 
 function requirePaymentMode(
   paymentMode: PaymentMode | undefined
@@ -28,6 +41,61 @@ function requirePaymentMode(
     throw new Error("Payment Mode is required when a bill is Fully Paid");
   }
   return paymentMode;
+}
+
+/** Persist money as nearest whole rupee. */
+function roundRupee(amount: number | undefined): number {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n);
+}
+
+function roundMoneyFields<T extends {
+  discount?: number;
+  grandTotal?: number;
+  amountPaid?: number;
+  balanceAmount?: number;
+  hourlyRate?: number;
+  extraCharges?: { id: string; name: string; amount: number }[];
+}>(fields: T): T {
+  const next = { ...fields };
+  if (next.discount !== undefined) next.discount = roundRupee(next.discount);
+  if (next.grandTotal !== undefined) next.grandTotal = Math.max(0, roundRupee(next.grandTotal));
+  if (next.amountPaid !== undefined) next.amountPaid = Math.max(0, roundRupee(next.amountPaid));
+  if (next.balanceAmount !== undefined) {
+    next.balanceAmount = Math.max(0, roundRupee(next.balanceAmount));
+  }
+  if (next.hourlyRate !== undefined) next.hourlyRate = roundRupee(next.hourlyRate);
+  if (next.extraCharges) {
+    next.extraCharges = next.extraCharges.map((c) => ({
+      ...c,
+      amount: roundRupee(c.amount),
+    }));
+  }
+  return next;
+}
+
+async function resolveActorName(
+  ctx: { db: any; auth: any },
+  _orgId: string,
+  clerkUserId: string,
+  userId: string
+): Promise<{ byName: string; byUserId: string }> {
+  const user = await ctx.db.get(userId);
+  const identity = await ctx.auth.getUserIdentity();
+  const byName =
+    (user?.fullName && String(user.fullName).trim()) ||
+    (identity?.name && String(identity.name).trim()) ||
+    (identity?.email && String(identity.email).trim()) ||
+    clerkUserId;
+  return { byName, byUserId: clerkUserId };
+}
+
+function withActivity(
+  existing: ActivityEntry[] | undefined,
+  entry: ActivityEntry
+): ActivityEntry[] {
+  return [...(existing || []), entry];
 }
 
 function normalizeAndValidateErt(raw: string): string {
@@ -177,6 +245,7 @@ export const create = mutation({
     customerLocation: v.optional(v.string()),
     customerState: v.optional(v.string()),
     date: v.string(),
+    endDate: v.optional(v.string()),
     startTime: v.optional(v.string()),
     endTime: v.optional(v.string()),
     hoursUsed: v.number(),
@@ -209,7 +278,7 @@ export const create = mutation({
     createdByEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { orgId, clerkUserId, role } = await requireOrgMember(ctx);
+    const { orgId, clerkUserId, role, userId } = await requireOrgMember(ctx);
     const ertNumber = normalizeAndValidateErt(args.ertNumber);
     await assertErtUnique(ctx, orgId, ertNumber);
 
@@ -223,15 +292,27 @@ export const create = mutation({
         ? requirePaymentMode(args.paymentMode)
         : undefined;
 
+    const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
+    const now = Date.now();
     const { ertNumber: _ert, paymentMode: _paymentMode, ...rest } = args;
+    const money = roundMoneyFields(rest);
     const billId = await ctx.db.insert("bills", {
-      ...rest,
+      ...money,
+      endDate: args.endDate || args.date,
       ertNumber,
       paymentMode,
       status,
       orgId,
       createdBy: args.createdBy || clerkUserId,
-      createdAt: Date.now(),
+      createdAt: now,
+      activityLog: [
+        {
+          at: now,
+          byName: actor.byName,
+          byUserId: actor.byUserId,
+          action: "CREATED",
+        },
+      ],
     });
 
     let invoiceNumber: string | undefined;
@@ -258,6 +339,7 @@ export const update = mutation({
     customerLocation: v.optional(v.string()),
     customerState: v.optional(v.string()),
     date: v.optional(v.string()),
+    endDate: v.optional(v.string()),
     startTime: v.optional(v.string()),
     endTime: v.optional(v.string()),
     hoursUsed: v.optional(v.number()),
@@ -294,7 +376,7 @@ export const update = mutation({
     balanceAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { orgId, role, clerkUserId } = await requireOrgMember(ctx);
+    const { orgId, role, clerkUserId, userId } = await requireOrgMember(ctx);
     const bill = await ctx.db.get(args.id);
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
@@ -323,8 +405,16 @@ export const update = mutation({
         ? requirePaymentMode(fields.paymentMode ?? bill.paymentMode)
         : undefined;
 
+    const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
+    const activityLog = withActivity(bill.activityLog, {
+      at: Date.now(),
+      byName: actor.byName,
+      byUserId: actor.byUserId,
+      action: "UPDATED",
+    });
+
     // Never allow clients to set/change invoiceNumber via update args
-    await ctx.db.patch(id, fields);
+    await ctx.db.patch(id, { ...roundMoneyFields(fields), activityLog });
 
     const updated = await ctx.db.get(id);
     const invoiceNumber = await assignInvoiceNumberIfNeeded(
@@ -356,7 +446,7 @@ export const updatePaymentStatus = mutation({
     balanceAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireElevated(ctx);
+    const { orgId, clerkUserId, userId } = await requireElevated(ctx);
     const bill = await ctx.db.get(args.id);
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
@@ -365,11 +455,22 @@ export const updatePaymentStatus = mutation({
       args.paymentStatus === "PAID"
         ? requirePaymentMode(args.paymentMode)
         : undefined;
+    const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
+    const money = roundMoneyFields({
+      amountPaid: args.amountPaid,
+      balanceAmount: args.balanceAmount,
+    });
     await ctx.db.patch(args.id, {
       paymentStatus: args.paymentStatus,
       paymentMode,
-      amountPaid: args.amountPaid,
-      balanceAmount: args.balanceAmount,
+      amountPaid: money.amountPaid,
+      balanceAmount: money.balanceAmount,
+      activityLog: withActivity(bill.activityLog, {
+        at: Date.now(),
+        byName: actor.byName,
+        byUserId: actor.byUserId,
+        action: "PAYMENT_UPDATED",
+      }),
     });
 
     const updated = await ctx.db.get(args.id);
@@ -392,22 +493,40 @@ export const updatePaymentStatus = mutation({
 export const approve = mutation({
   args: { id: v.id("bills") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireElevated(ctx);
+    const { orgId, clerkUserId, userId } = await requireElevated(ctx);
     const bill = await ctx.db.get(args.id);
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
-    await ctx.db.patch(args.id, { status: "APPROVED" });
+    const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
+    await ctx.db.patch(args.id, {
+      status: "APPROVED",
+      activityLog: withActivity(bill.activityLog, {
+        at: Date.now(),
+        byName: actor.byName,
+        byUserId: actor.byUserId,
+        action: "APPROVED",
+      }),
+    });
   },
 });
 
 export const reject = mutation({
   args: { id: v.id("bills") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireElevated(ctx);
+    const { orgId, clerkUserId, userId } = await requireElevated(ctx);
     const bill = await ctx.db.get(args.id);
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
-    await ctx.db.patch(args.id, { status: "REJECTED" });
+    const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
+    await ctx.db.patch(args.id, {
+      status: "REJECTED",
+      activityLog: withActivity(bill.activityLog, {
+        at: Date.now(),
+        byName: actor.byName,
+        byUserId: actor.byUserId,
+        action: "REJECTED",
+      }),
+    });
   },
 });
 

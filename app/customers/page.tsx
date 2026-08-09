@@ -20,14 +20,13 @@ import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { useAuth } from "../../components/auth/AuthProvider";
 import { isBillCreatedByUser } from "../../lib/utils";
 import { FILTER_SEARCH_CLASS, TABLE } from "../../lib/ui-classes";
+import { mobileNumberSchema, normalizeMobileInput } from "../../lib/mobile";
+import { formatRupee } from "../../lib/money";
 
 // Validation schema for add/edit customer
 const customerSchema = z.object({
   name: z.string().min(1, "Customer name is required"),
-  mobile: z.string()
-    .min(10, "Mobile number must be at least 10 digits")
-    .max(15, "Mobile number is too long")
-    .regex(/^[0-9+\s-()]+$/, "Invalid phone number format"),
+  mobile: mobileNumberSchema,
   location: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().optional(),
@@ -489,9 +488,16 @@ export default function CustomersPage() {
           <Input
             label="Mobile Number *"
             type="tel"
+            inputMode="numeric"
+            maxLength={10}
             placeholder="Enter 10 digit mobile"
             error={errors.mobile?.message}
-            {...register("mobile")}
+            {...register("mobile", {
+              setValueAs: (v) => normalizeMobileInput(String(v ?? "")),
+              onChange: (e) => {
+                e.target.value = normalizeMobileInput(e.target.value);
+              },
+            })}
           />
           {/* Location Detection Header */}
           <div className="flex items-center justify-between pt-1">
@@ -560,9 +566,16 @@ export default function CustomersPage() {
           <Input
             label="Mobile Number *"
             type="tel"
+            inputMode="numeric"
+            maxLength={10}
             placeholder="Enter 10 digit mobile"
             error={errors.mobile?.message}
-            {...register("mobile")}
+            {...register("mobile", {
+              setValueAs: (v) => normalizeMobileInput(String(v ?? "")),
+              onChange: (e) => {
+                e.target.value = normalizeMobileInput(e.target.value);
+              },
+            })}
           />
           
           <div className="flex items-center justify-between pt-1">
@@ -650,7 +663,7 @@ export default function CustomersPage() {
               </div>
               <div className="min-w-0">
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-semibold leading-none">Total Spent</span>
-                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none mt-1">₹{lifetimeSpend}</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white leading-none mt-1">{formatRupee(lifetimeSpend)}</p>
               </div>
             </div>
             <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-900/50 dark:border-slate-800 flex items-center gap-3">
@@ -697,7 +710,7 @@ export default function CustomersPage() {
                         </TableCell>
                         <TableCell className={TABLE.muted}>{bill.date}</TableCell>
                         <TableCell className={TABLE.muted}>{bill.hoursUsed} hr</TableCell>
-                        <TableCell className={TABLE.moneyRight}>₹{bill.grandTotal}</TableCell>
+                        <TableCell className={TABLE.moneyRight}>{formatRupee(bill.grandTotal)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
