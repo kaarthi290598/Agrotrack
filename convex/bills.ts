@@ -91,6 +91,42 @@ async function resolveActorName(
   return { byName, byUserId: clerkUserId };
 }
 
+/** Bills store display name in createdBy; ownership must not compare that to clerkUserId alone. */
+async function assertSupervisorCanModifyBill(
+  ctx: { db: any; auth: any },
+  bill: Doc<"bills">,
+  role: string,
+  clerkUserId: string,
+  userId: string,
+  orgId: string
+): Promise<void> {
+  if (role !== "SUPERVISOR") return;
+
+  if (bill.status === "APPROVED") {
+    throw new Error("Supervisors cannot edit approved bills");
+  }
+
+  const created = (bill.activityLog || []).find((e) => e.action === "CREATED");
+  if (created?.byUserId && created.byUserId === clerkUserId) return;
+  if (bill.createdBy === clerkUserId) return;
+
+  const identity = await ctx.auth.getUserIdentity();
+  const email = (identity?.email || "").toLowerCase().trim();
+  const billEmail = (bill.createdByEmail || "").toLowerCase().trim();
+  if (email && billEmail && email === billEmail) return;
+
+  const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
+  const billName = (bill.createdBy || "").toLowerCase().trim();
+  const actorName = actor.byName.toLowerCase().trim();
+  if (billName && actorName && billName === actorName) return;
+  if (email && billName && billName === email) return;
+
+  // Legacy rows with no creator identity — allow edit.
+  if (!bill.createdBy && !bill.createdByEmail && !created?.byUserId) return;
+
+  throw new Error("Forbidden");
+}
+
 function withActivity(
   existing: ActivityEntry[] | undefined,
   entry: ActivityEntry
@@ -282,8 +318,11 @@ export const create = mutation({
     const ertNumber = normalizeAndValidateErt(args.ertNumber);
     await assertErtUnique(ctx, orgId, ertNumber);
 
-    // Supervisors (basic role) cannot self-approve
+    // Only Fully Paid bills may be Approved; supervisors cannot self-approve.
     let status = args.status;
+    if (args.paymentStatus !== "PAID" && status === "APPROVED") {
+      status = "PENDING_APPROVAL";
+    }
     if (role === "SUPERVISOR" && status === "APPROVED") {
       status = "PENDING_APPROVAL";
     }
@@ -381,9 +420,14 @@ export const update = mutation({
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
 
-    if (role === "SUPERVISOR" && bill.createdBy && bill.createdBy !== clerkUserId) {
-      throw new Error("Forbidden");
-    }
+    await assertSupervisorCanModifyBill(
+      ctx,
+      bill,
+      role,
+      clerkUserId,
+      userId,
+      orgId
+    );
 
     const { id, ...fields } = args;
     if (role === "SUPERVISOR" && fields.status === "APPROVED") {
@@ -400,6 +444,17 @@ export const update = mutation({
 
     const resultingPaymentStatus =
       fields.paymentStatus ?? bill.paymentStatus;
+    if (
+      resultingPaymentStatus !== "PAID" &&
+      (fields.status === "APPROVED" ||
+        (fields.status === undefined && bill.status === "APPROVED"))
+    ) {
+      // Keep approved unpaid legacy rows as-is unless status is being set;
+      // block newly setting APPROVED without payment.
+      if (fields.status === "APPROVED") {
+        fields.status = "PENDING_APPROVAL";
+      }
+    }
     fields.paymentMode =
       resultingPaymentStatus === "PAID"
         ? requirePaymentMode(fields.paymentMode ?? bill.paymentMode)
@@ -497,6 +552,9 @@ export const approve = mutation({
     const bill = await ctx.db.get(args.id);
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
+    if (bill.paymentStatus !== "PAID") {
+      throw new Error("Only Fully Paid invoices can be approved");
+    }
     const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
     await ctx.db.patch(args.id, {
       status: "APPROVED",
@@ -517,6 +575,9 @@ export const reject = mutation({
     const bill = await ctx.db.get(args.id);
     if (!bill) throw new Error("Bill not found");
     assertSameOrg(bill.orgId, orgId, "Bill");
+    if (bill.paymentStatus !== "PAID") {
+      throw new Error("Only Fully Paid invoices can be rejected");
+    }
     const actor = await resolveActorName(ctx, orgId, clerkUserId, userId);
     await ctx.db.patch(args.id, {
       status: "REJECTED",

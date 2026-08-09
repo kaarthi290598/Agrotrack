@@ -127,7 +127,7 @@ export default function ReportsPage() {
     try {
       const rawBills = await billingService.getAll(orgId || undefined);
       const allBills = rawBills.filter(
-        (b) => isBillCreatedByUser(b, user, elevated) && b.status === "APPROVED" && b.paymentStatus === "PAID"
+        (b) => isBillCreatedByUser(b, user, elevated) && b.status === "APPROVED"
       );
       const allCustomers = await customerService.getAll(orgId || undefined);
       const loadedSettings = await settingsService.get(orgId || undefined);

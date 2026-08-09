@@ -154,11 +154,32 @@ function BillsListInner() {
     );
   };
 
+  const canApproveOrReject = (bill: Bill) =>
+    bill.status === "PENDING_APPROVAL" && bill.paymentStatus === "PAID";
+
   const handleBulkApprove = async () => {
     if (selectedIds.length === 0) return;
+    const eligible = userBills.filter(
+      (b) => selectedIds.includes(b.id) && canApproveOrReject(b)
+    );
+    if (eligible.length === 0) {
+      toast({
+        type: "error",
+        title: "Nothing to Approve",
+        description: "Only Fully Paid invoices pending approval can be approved.",
+      });
+      return;
+    }
     try {
-      await billingService.bulkApprove(selectedIds);
-      toast({ type: "success", title: "Bulk Approved", description: `Approved ${selectedIds.length} bills.` });
+      await billingService.bulkApprove(eligible.map((b) => b.id));
+      const skipped = selectedIds.length - eligible.length;
+      toast({
+        type: "success",
+        title: "Bulk Approved",
+        description:
+          `Approved ${eligible.length} invoice${eligible.length === 1 ? "" : "s"}.` +
+          (skipped > 0 ? ` Skipped ${skipped} unpaid/ineligible.` : ""),
+      });
       setSelectedIds([]);
       fetchAllData();
     } catch (err: any) {
@@ -168,9 +189,27 @@ function BillsListInner() {
 
   const handleBulkReject = async () => {
     if (selectedIds.length === 0) return;
+    const eligible = userBills.filter(
+      (b) => selectedIds.includes(b.id) && canApproveOrReject(b)
+    );
+    if (eligible.length === 0) {
+      toast({
+        type: "error",
+        title: "Nothing to Reject",
+        description: "Only Fully Paid invoices pending approval can be rejected.",
+      });
+      return;
+    }
     try {
-      await billingService.bulkReject(selectedIds);
-      toast({ type: "info", title: "Bulk Rejected", description: `Rejected ${selectedIds.length} bills.` });
+      await billingService.bulkReject(eligible.map((b) => b.id));
+      const skipped = selectedIds.length - eligible.length;
+      toast({
+        type: "info",
+        title: "Bulk Rejected",
+        description:
+          `Rejected ${eligible.length} invoice${eligible.length === 1 ? "" : "s"}.` +
+          (skipped > 0 ? ` Skipped ${skipped} unpaid/ineligible.` : ""),
+      });
       setSelectedIds([]);
       fetchAllData();
     } catch (err: any) {
@@ -263,7 +302,30 @@ function BillsListInner() {
     }
   };
 
+  const canEditBill = (bill: Bill) => {
+    // Supervisors cannot edit approved bills; Admin / Ops Lead can.
+    if (bill.status === "APPROVED") return elevated;
+    return (
+      bill.status === "PENDING_APPROVAL" ||
+      bill.status === "REJECTED" ||
+      bill.status === "IN_PROGRESS" ||
+      elevated
+    );
+  };
+
   const handleOpenEditModal = (bill: Bill) => {
+    if (!canEditBill(bill)) {
+      toast({
+        type: "error",
+        title: "Edit Not Allowed",
+        description: "Supervisors cannot edit approved bills.",
+      });
+      return;
+    }
+    if (bill.status === "IN_PROGRESS") {
+      router.push(`/billing?editBillId=${bill.id}&checkout=1`);
+      return;
+    }
     router.push(`/billing?editBillId=${bill.id}`);
   };
 
@@ -429,6 +491,7 @@ function BillsListInner() {
   const totalValue = userBills.reduce((acc, b) => acc + b.grandTotal, 0);
   const paidBillsCount = userBills.filter(b => b.paymentStatus === "PAID").length;
   const pendingCount = userBills.filter(b => b.status === "PENDING_APPROVAL").length;
+  const liveCount = userBills.filter((b) => b.status === "IN_PROGRESS").length;
 
   return (
     <div className="space-y-6">
@@ -453,11 +516,27 @@ function BillsListInner() {
               : "Track your generated bills and their status"}
           </p>
         </div>
-        <Link href="/billing" passHref className="w-full sm:w-auto shrink-0">
-          <Button variant="primary" className="w-full sm:w-auto cursor-pointer gap-2 shadow-md shadow-emerald-600/20">
-            <Plus className="h-4 w-4" /> New Bill
-          </Button>
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto shrink-0">
+          <Link href="/billing?tab=sessions" passHref className="w-full sm:w-auto">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto cursor-pointer gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+            >
+              <Clock className={`h-4 w-4 ${liveCount > 0 ? "animate-spin" : ""}`} />
+              Live Running
+              {liveCount > 0 && (
+                <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {liveCount}
+                </span>
+              )}
+            </Button>
+          </Link>
+          <Link href="/billing" passHref className="w-full sm:w-auto">
+            <Button variant="primary" className="w-full sm:w-auto cursor-pointer gap-2 shadow-md shadow-emerald-600/20">
+              <Plus className="h-4 w-4" /> New Bill
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* ═══════════ Stat Cards ═══════════ */}
@@ -605,8 +684,17 @@ function BillsListInner() {
                         <div className="flex items-center gap-1 flex-wrap justify-end">
                           <button type="button" onClick={() => setActivityBill(bill)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Activity log"><History className="h-3.5 w-3.5" /></button>
                           <button type="button" onClick={() => handleViewInvoice(bill)} className={invoiceViewButtonClass} title="View Invoice Detail"><Eye className="h-4 w-4" /></button>
-                          {elevated && bill.status === "PENDING_APPROVAL" && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
-                          {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || elevated) && (<button type="button" onClick={() => handleOpenEditModal(bill)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>)}
+                          {elevated && canApproveOrReject(bill) && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1.5 bg-rose-600 text-white rounded-lg hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
+                          {canEditBill(bill) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(bill)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+                              title={bill.status === "IN_PROGRESS" ? "Check out live session" : "Edit"}
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {isAdmin && (<button type="button" onClick={() => handleDeleteClick(bill.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg cursor-pointer" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>)}
                         </div>
                       </div>
@@ -689,8 +777,17 @@ function BillsListInner() {
                             <div className="flex items-center justify-end gap-1 flex-nowrap">
                               <button type="button" onClick={() => setActivityBill(bill)} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Activity log"><History className="h-3.5 w-3.5" /></button>
                               <button type="button" onClick={() => handleViewInvoice(bill)} className={invoiceViewButtonClass} title="View Invoice Detail"><Eye className="h-4 w-4" /></button>
-                              {elevated && bill.status === "PENDING_APPROVAL" && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1 bg-rose-600 text-white rounded-md hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
-                              {(bill.status === "PENDING_APPROVAL" || bill.status === "REJECTED" || elevated) && (<button type="button" onClick={() => handleOpenEditModal(bill)} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Edit"><Edit3 className="h-3.5 w-3.5" /></button>)}
+                              {elevated && canApproveOrReject(bill) && (<><button type="button" onClick={() => handleApproveBill(bill.id)} className="p-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 cursor-pointer" title="Approve"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => handleRejectBill(bill.id)} className="p-1 bg-rose-600 text-white rounded-md hover:bg-rose-700 cursor-pointer" title="Reject"><X className="h-3.5 w-3.5" /></button></>)}
+                              {canEditBill(bill) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditModal(bill)}
+                                  className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-md cursor-pointer"
+                                  title={bill.status === "IN_PROGRESS" ? "Check out live session" : "Edit"}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                               {isAdmin && (<button type="button" onClick={() => handleDeleteClick(bill.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-md cursor-pointer" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>)}
                             </div>
                           </TableCell>

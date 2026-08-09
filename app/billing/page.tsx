@@ -156,33 +156,88 @@ function BillingFormInner() {
         setCustomers(customerData);
         setBills(billsData);
         
+        if (searchParams.get("tab") === "sessions") {
+          setActiveTab("sessions");
+        }
+
         // Check if editing a bill via query param /billing?editBillId=bill-123
         const editBillId = searchParams.get("editBillId");
+        const forceCheckout = searchParams.get("checkout") === "1";
         if (editBillId) {
           const foundBill = billsData.find((b) => b.id === editBillId);
           if (foundBill) {
-            setEditingBillId(foundBill.id);
-            setEditingInvoiceNum(foundBill.invoiceNumber || "");
-            setEditingBillStatus(foundBill.status);
-            setErtNumber(foundBill.ertNumber || "");
-            setSelectedCustomerId(foundBill.customerId);
-            const foundCust = customerData.find((c) => c.id === foundBill.customerId);
-            if (foundCust) {
-              setCustomerSearchQuery(foundCust.name);
+            // Supervisors cannot edit approved bills; Admin / Ops Lead can.
+            if (foundBill.status === "APPROVED" && !isAdmin) {
+              toast({
+                type: "error",
+                title: "Edit Not Allowed",
+                description: "Supervisors cannot edit approved bills.",
+              });
+              router.replace("/bills");
+              return;
             }
-            if (foundBill.date) {
-              setBillDate(foundBill.date);
-              setEndDate(foundBill.endDate || foundBill.date);
-            }
-            setStartTime(foundBill.startTime || "");
-            setEndTime(foundBill.endTime || "");
-            setHoursUsed(foundBill.hoursUsed.toString());
-            setDiscount(foundBill.discount.toString());
-            setAdditionalCharges(foundBill.extraCharges || []);
-            setPaymentStatus(foundBill.paymentStatus || "UNPAID");
-            setPaymentMode(foundBill.paymentMode || "");
-            if (foundBill.amountPaid !== undefined) {
-              setPartialPaidAmount(String(foundBill.amountPaid));
+            const isLiveCheckout =
+              forceCheckout || foundBill.status === "IN_PROGRESS";
+            if (isLiveCheckout) {
+              const cust = customerData.find((c) => c.id === foundBill.customerId);
+              setSelectedCustomerId(foundBill.customerId);
+              setCustomerSearchQuery(cust?.name || "");
+              setStartTime(foundBill.startTime || "");
+              setBillDate(
+                foundBill.date || new Date().toISOString().split("T")[0]
+              );
+              const today = new Date().toISOString().split("T")[0];
+              setEndDate(today);
+              const now = new Date();
+              const nowStr = `${now.getHours().toString().padStart(2, "0")}:${now
+                .getMinutes()
+                .toString()
+                .padStart(2, "0")}`;
+              setEndTime(nowStr);
+              if (foundBill.startTime) {
+                const hours = calculateBillHours({
+                  startDate: foundBill.date || today,
+                  endDate: today,
+                  startTime: foundBill.startTime,
+                  endTime: nowStr,
+                });
+                if (hours !== null) setHoursUsed(hours.toString());
+              }
+              setEditingBillId(foundBill.id);
+              setEditingInvoiceNum(foundBill.invoiceNumber || "");
+              setEditingBillStatus(foundBill.status);
+              setErtNumber(foundBill.ertNumber || "");
+              setDiscount(foundBill.discount?.toString() || "0");
+              setAdditionalCharges(foundBill.extraCharges || []);
+              setPaymentStatus(foundBill.paymentStatus || "UNPAID");
+              setPaymentMode(foundBill.paymentMode || "");
+              setActiveTab("express");
+            } else {
+              setEditingBillId(foundBill.id);
+              setEditingInvoiceNum(foundBill.invoiceNumber || "");
+              setEditingBillStatus(foundBill.status);
+              setErtNumber(foundBill.ertNumber || "");
+              setSelectedCustomerId(foundBill.customerId);
+              const foundCust = customerData.find(
+                (c) => c.id === foundBill.customerId
+              );
+              if (foundCust) {
+                setCustomerSearchQuery(foundCust.name);
+              }
+              if (foundBill.date) {
+                setBillDate(foundBill.date);
+                setEndDate(foundBill.endDate || foundBill.date);
+              }
+              setStartTime(foundBill.startTime || "");
+              setEndTime(foundBill.endTime || "");
+              setHoursUsed(foundBill.hoursUsed.toString());
+              setDiscount(foundBill.discount.toString());
+              setAdditionalCharges(foundBill.extraCharges || []);
+              setPaymentStatus(foundBill.paymentStatus || "UNPAID");
+              setPaymentMode(foundBill.paymentMode || "");
+              if (foundBill.amountPaid !== undefined) {
+                setPartialPaidAmount(String(foundBill.amountPaid));
+              }
             }
           }
         } else {
@@ -207,7 +262,7 @@ function BillingFormInner() {
       }
     }
     loadData();
-  }, [orgId, isClerkLoaded, searchParams, toast]);
+  }, [orgId, isClerkLoaded, searchParams, toast, isAdmin, router]);
 
   // GPS Location Trigger for Quick Add Customer
   const handleGetLocation = () => {
@@ -601,10 +656,20 @@ function BillingFormInner() {
     setIsGenerating(true);
     try {
       const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
-      const initialStatus = isAdmin ? "APPROVED" : "PENDING_APPROVAL";
+      // Approve only applies to Fully Paid invoices.
+      const initialStatus =
+        isAdmin && paymentStatus === "PAID" ? "APPROVED" : "PENDING_APPROVAL";
       const customerSnapshot = customerSnapshotFromCustomer(selectedCustomer);
       
       if (editingBillId) {
+        if (editingBillStatus === "APPROVED" && !isAdmin) {
+          toast({
+            type: "error",
+            title: "Edit Not Allowed",
+            description: "Supervisors cannot edit approved bills.",
+          });
+          return;
+        }
         // Update existing bill mode
         const updatedBill = await billingService.update(editingBillId, {
           customerId: selectedCustomerId,
@@ -638,9 +703,12 @@ function BillingFormInner() {
           : `ERT ${validErt}`;
         toast({
           type: "success",
-          title: paymentStatus === "PAID"
-            ? (isAdmin ? "Invoice Completed & Approved" : "Invoice Completed (Pending Approval)")
-            : "Bill Updated Successfully",
+          title:
+            paymentStatus === "PAID"
+              ? initialStatus === "APPROVED"
+                ? "Invoice Completed & Approved"
+                : "Invoice Completed (Pending Approval)"
+              : "Bill Updated Successfully",
           description: `${label} saved.`
         });
 
@@ -684,14 +752,18 @@ function BillingFormInner() {
       
       toast({
         type: "success",
-        title: paymentStatus === "PAID" && newBill.invoiceNumber
-          ? (isAdmin ? "Invoice Created & Approved" : "Invoice Created (Pending Approval)")
-          : "Bill Saved Successfully",
-        description: paymentStatus === "PAID" && newBill.invoiceNumber
-          ? (isAdmin
+        title:
+          paymentStatus === "PAID" && newBill.invoiceNumber
+            ? initialStatus === "APPROVED"
+              ? "Invoice Created & Approved"
+              : "Invoice Created (Pending Approval)"
+            : "Bill Saved Successfully",
+        description:
+          paymentStatus === "PAID" && newBill.invoiceNumber
+            ? initialStatus === "APPROVED"
               ? `Invoice ${newBill.invoiceNumber} logged & approved!`
-              : `Invoice ${newBill.invoiceNumber} submitted for Admin approval.`)
-          : `Bill ERT ${validErt} recorded (${paymentStatus === "PARTIAL_PAID" ? "Partial Paid" : "Unpaid"}). Invoice assigned when Fully Paid.`,
+              : `Invoice ${newBill.invoiceNumber} submitted for Admin approval.`
+            : `Bill ERT ${validErt} recorded (${paymentStatus === "PARTIAL_PAID" ? "Partial Paid" : "Unpaid"}). Invoice assigned when Fully Paid.`,
       });
 
       fetchBills();
@@ -883,7 +955,9 @@ function BillingFormInner() {
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {isAdmin && editingBillStatus === "PENDING_APPROVAL" && (
+            {isAdmin &&
+              editingBillStatus === "PENDING_APPROVAL" &&
+              paymentStatus === "PAID" && (
               <>
                 <Button
                   type="button"
@@ -1312,7 +1386,10 @@ function BillingFormInner() {
 
                 {/* Primary Action Buttons (Desktop View) */}
                 <div className="hidden md:flex flex-col gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                  {isAdmin && editingBillId && editingBillStatus === "PENDING_APPROVAL" && (
+                  {isAdmin &&
+                    editingBillId &&
+                    editingBillStatus === "PENDING_APPROVAL" &&
+                    paymentStatus === "PAID" && (
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         type="button"
@@ -1470,7 +1547,10 @@ function BillingFormInner() {
       {/* Floating Sticky Mobile Submit Action Bar */}
       {activeTab === "express" && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-3.5 flex flex-col gap-2 shadow-2xl md:hidden">
-          {isAdmin && editingBillId && editingBillStatus === "PENDING_APPROVAL" && (
+          {isAdmin &&
+            editingBillId &&
+            editingBillStatus === "PENDING_APPROVAL" &&
+            paymentStatus === "PAID" && (
             <div className="flex items-center gap-2">
               <Button
                 type="button"
