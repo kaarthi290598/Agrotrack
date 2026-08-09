@@ -31,7 +31,10 @@ loadEnvLocal();
 const publishable = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "";
 const secret = process.env.CLERK_SECRET_KEY || "";
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL || "";
-const issuer = process.env.CLERK_JWT_ISSUER_DOMAIN || "";
+const issuer =
+  process.env.CLERK_FRONTEND_API_URL ||
+  process.env.CLERK_JWT_ISSUER_DOMAIN ||
+  "";
 
 const isLive = publishable.startsWith("pk_live_") || secret.startsWith("sk_live_");
 const isTest = publishable.startsWith("pk_test_") || secret.startsWith("sk_test_");
