@@ -62,7 +62,6 @@ export default function MembersPage() {
 
   const syncOrgMembers = useMutation(api.users.syncOrgMembers);
   const updateRole = useMutation(api.users.updateRole);
-  const clearPendingInvites = useMutation(api.users.clearPendingInvites);
 
   const me = useQuery(
     api.users.getCurrentUser,
@@ -95,14 +94,6 @@ export default function MembersPage() {
       router.replace("/billing");
     }
   }, [user, isAdmin, router, toast]);
-
-  // Wipe leftover pending-invite rows from the old invite flow
-  useEffect(() => {
-    if (!orgId || !user?.id || !isAdmin || me?.role !== "ADMIN") return;
-    void clearPendingInvites({
-      orgId,
-    }).catch(() => null);
-  }, [orgId, user?.id, isAdmin, me?.role, clearPendingInvites]);
 
   const handleSync = async ({ allowPrune = true }: { allowPrune?: boolean } = {}) => {
     if (!orgId || !user?.id) return;

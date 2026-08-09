@@ -24,19 +24,6 @@ export default defineSchema({
     .index("by_org_email", ["orgId", "email"]),
 
   /**
-   * Pending org invitations with the intended Convex application role.
-   * Consumed when the invitee joins and their Convex user record is created.
-   */
-  pendingInvites: defineTable({
-    orgId: v.string(),
-    email: v.string(),
-    role: appRole,
-    invitedByClerkUserId: v.string(),
-    clerkInvitationId: v.optional(v.string()),
-    createdAt: v.number(),
-  }).index("by_org_email", ["orgId", "email"]),
-
-  /**
    * Blocks sync/webhook from recreating a member right after deliberate removal
    * (Clerk membership list can lag and would otherwise re-insert the row).
    */

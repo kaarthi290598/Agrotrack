@@ -180,55 +180,14 @@ async function findExistingOrgUser(
   return byEmail;
 }
 
-async function findPendingInvite(
-  ctx: { db: any },
-  orgId: string,
-  email: string
-) {
-  const rows = await ctx.db
-    .query("pendingInvites")
-    .withIndex("by_org_email", (q: any) =>
-      q.eq("orgId", orgId).eq("email", normalizeEmail(email))
-    )
-    .collect();
-  if (rows.length === 0) return null;
-  if (rows.length === 1) return rows[0];
-  // Keep newest pending role intent
-  rows.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
-  const keeper = rows[0];
-  for (const extra of rows.slice(1)) {
-    await ctx.db.delete(extra._id);
-  }
-  return keeper;
-}
-
-/** Prefer pending-invite role; fall back to Clerk org-role mapping. Consumes the invite. */
+/** Map Clerk org role to app role when creating a new Convex user. */
 async function resolveCreateRole(
-  ctx: { db: any },
-  orgId: string,
-  email: string,
+  _ctx: { db: any },
+  _orgId: string,
+  _email: string,
   clerkOrgRole?: string | null
 ): Promise<AppRole> {
-  const pending = await findPendingInvite(ctx, orgId, email);
-  if (pending) {
-    const role = pending.role as AppRole;
-    await ctx.db.delete(pending._id);
-    return role;
-  }
   return clerkOrgRoleToAppRole(clerkOrgRole);
-}
-
-/**
- * Read intended app role without consuming it (used when upserting before
- * Clerk membership so webhook/sync cannot invent MEMBER).
- */
-async function peekPendingRole(
-  ctx: { db: any },
-  orgId: string,
-  email: string
-): Promise<AppRole | null> {
-  const pending = await findPendingInvite(ctx, orgId, email);
-  return pending ? (pending.role as AppRole) : null;
 }
 
 async function resolveClerkUserId(ctx: { auth: any }) {
@@ -553,7 +512,7 @@ export const removeAllForClerkUser = mutation({
   },
 });
 
-/** Clerk `organization.deleted` — drop all members and invites for that org. */
+/** Clerk `organization.deleted` — drop all members for that org. */
 export const removeAllForOrg = mutation({
   args: {
     secret: v.string(),
@@ -573,109 +532,7 @@ export const removeAllForOrg = mutation({
       await ctx.db.delete(record._id);
     }
 
-    const invites = await ctx.db
-      .query("pendingInvites")
-      .withIndex("by_org_email", (q) => q.eq("orgId", args.orgId))
-      .collect();
-    for (const invite of invites) {
-      await ctx.db.delete(invite._id);
-    }
-
-    return { removed: records.length, invitesRemoved: invites.length };
-  },
-});
-
-/**
- * Record a pending invite with the intended Convex application role.
- * Kept for internal staging; not used by the UI invite flow.
- */
-export const createPendingInvite = mutation({
-  args: {
-    orgId: v.string(),
-    email: v.string(),
-    role: appRoleValidator,
-    clerkInvitationId: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const caller = await requireOrgAdmin(ctx, args.orgId);
-    const email = normalizeEmail(args.email);
-    if (!email.includes("@")) {
-      throw new Error("Invalid email address");
-    }
-
-    const existing = await findPendingInvite(ctx, args.orgId, email);
-    const now = Date.now();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        role: args.role,
-        invitedByClerkUserId: caller.clerkUserId,
-        clerkInvitationId: args.clerkInvitationId,
-        createdAt: now,
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("pendingInvites", {
-      orgId: args.orgId,
-      email,
-      role: args.role,
-      invitedByClerkUserId: caller.clerkUserId,
-      clerkInvitationId: args.clerkInvitationId,
-      createdAt: now,
-    });
-  },
-});
-
-export const cancelPendingInvite = mutation({
-  args: {
-    orgId: v.string(),
-    email: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireOrgAdmin(ctx, args.orgId);
-    const existing = await findPendingInvite(ctx, args.orgId, args.email);
-    if (existing) {
-      await ctx.db.delete(existing._id);
-    }
-  },
-});
-
-/** Remove all staged/leftover pending-invite rows for an org. */
-export const clearPendingInvites = mutation({
-  args: {
-    orgId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireOrgAdmin(ctx, args.orgId);
-    const invites = await ctx.db
-      .query("pendingInvites")
-      .withIndex("by_org_email", (q: any) => q.eq("orgId", args.orgId))
-      .collect();
-    for (const invite of invites) {
-      await ctx.db.delete(invite._id);
-    }
-    return { removed: invites.length };
-  },
-});
-
-export const listPendingInvites = query({
-  args: {
-    orgId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    try {
-      await requireOrgAdmin(ctx, args.orgId);
-    } catch {
-      return [];
-    }
-
-    const invites = await ctx.db
-      .query("pendingInvites")
-      .withIndex("by_org_email", (q) => q.eq("orgId", args.orgId))
-      .collect();
-
-    return invites.sort((a, b) => b.createdAt - a.createdAt);
+    return { removed: records.length };
   },
 });
 
@@ -734,13 +591,7 @@ export const upsertCreatedMember = mutation({
     // Explicit admin add overrides a prior removal block.
     await clearRemovalBlock(ctx, args.orgId, args.clerkUserId);
 
-    const staged = await peekPendingRole(ctx, args.orgId, email);
-    const role = args.role || staged || "SUPERVISOR";
-
-    const pending = await findPendingInvite(ctx, args.orgId, email);
-    if (pending) {
-      await ctx.db.delete(pending._id);
-    }
+    const role = args.role || "SUPERVISOR";
 
     const existing = await findExistingOrgUser(
       ctx,
