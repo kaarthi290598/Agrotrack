@@ -281,7 +281,21 @@ function InvoiceBody({
           <p className="text-[10px] font-bold text-slate-800">
             For {settings.businessName}
           </p>
-          <div className="h-10" />
+          {settings.signatureUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={settings.signatureUrl}
+              alt=""
+              crossOrigin="anonymous"
+              className={
+                compact
+                  ? "ml-auto mt-1 h-12 w-auto max-w-[140px] object-contain mix-blend-multiply"
+                  : "ml-auto mt-1 h-16 w-auto max-w-[180px] object-contain mix-blend-multiply"
+              }
+            />
+          ) : (
+            <div className="h-10" />
+          )}
           <p className="text-[9px] text-slate-400">Authorized Signatory</p>
         </div>
       </div>

@@ -69,6 +69,7 @@ export default function SettingsPage() {
   const canManageSettings = canAccessSettings(user?.role);
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user && !canManageSettings) {
@@ -84,7 +85,9 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingSignature, setIsUploadingSignature] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [highestUsedInvoiceNumber, setHighestUsedInvoiceNumber] = useState(0);
   const [latestInvoiceNumber, setLatestInvoiceNumber] = useState<string | null>(
     null
@@ -150,6 +153,7 @@ export default function SettingsPage() {
           footerText: data.footerText || "",
         });
         setLogoUrl(data.logoUrl ?? null);
+        setSignatureUrl(data.signatureUrl ?? null);
         setHighestUsedInvoiceNumber(data.highestUsedInvoiceNumber ?? 0);
         setLatestInvoiceNumber(data.latestInvoiceNumber ?? null);
         setNextNumberDisplay(
@@ -181,9 +185,11 @@ export default function SettingsPage() {
         invoiceNotes: values.invoiceNotes || undefined,
         footerText: values.footerText || undefined,
         logoUrl,
+        signatureUrl,
       };
       const saved = await settingsService.update(payload, orgId || undefined);
       setLogoUrl(saved.logoUrl ?? null);
+      setSignatureUrl(saved.signatureUrl ?? null);
       setHighestUsedInvoiceNumber(saved.highestUsedInvoiceNumber ?? 0);
       setLatestInvoiceNumber(saved.latestInvoiceNumber ?? null);
       setNextNumberDisplay(
@@ -249,6 +255,60 @@ export default function SettingsPage() {
       });
     } finally {
       setIsUploadingLogo(false);
+    }
+  };
+
+  const handleSignatureSelect = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsUploadingSignature(true);
+    try {
+      const updated = await settingsService.uploadSignature(file);
+      setSignatureUrl(updated.signatureUrl ?? null);
+      toast({
+        type: "success",
+        title: "Signature Updated",
+        description: "White background was blended out for the invoice.",
+      });
+    } catch (error: unknown) {
+      toast({
+        type: "error",
+        title: "Signature Upload Failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not upload the signature.",
+      });
+    } finally {
+      setIsUploadingSignature(false);
+    }
+  };
+
+  const handleClearSignature = async () => {
+    setIsUploadingSignature(true);
+    try {
+      const updated = await settingsService.clearSignature();
+      setSignatureUrl(updated.signatureUrl ?? null);
+      toast({
+        type: "success",
+        title: "Signature Removed",
+        description: "Invoice will print without a signature image.",
+      });
+    } catch (error: unknown) {
+      toast({
+        type: "error",
+        title: "Remove Failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Could not remove the signature.",
+      });
+    } finally {
+      setIsUploadingSignature(false);
     }
   };
 
@@ -346,6 +406,61 @@ export default function SettingsPage() {
                       variant="outline"
                       disabled={isUploadingLogo}
                       onClick={handleClearLogo}
+                      className="cursor-pointer text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex h-24 w-40 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                {signatureUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={signatureUrl}
+                    alt="Authorized signature"
+                    className="h-full w-full object-contain p-1 mix-blend-multiply dark:mix-blend-screen"
+                  />
+                ) : (
+                  <ImageIcon className="h-8 w-8 text-slate-300" />
+                )}
+              </div>
+              <div className="space-y-2 flex-1">
+                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  Authorized signature
+                </p>
+                <p className="text-xs text-slate-500">
+                  JPG or PNG, max 2 MB. White paper is blended out so the ink
+                  sits cleanly on the Tax Invoice.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    ref={signatureInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                    className="hidden"
+                    onChange={handleSignatureSelect}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    isLoading={isUploadingSignature}
+                    onClick={() => signatureInputRef.current?.click()}
+                    className="cursor-pointer"
+                  >
+                    {!isUploadingSignature && <Upload className="h-4 w-4" />}
+                    Upload signature
+                  </Button>
+                  {signatureUrl && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isUploadingSignature}
+                      onClick={handleClearSignature}
                       className="cursor-pointer text-red-600 hover:text-red-700"
                     >
                       <Trash2 className="h-4 w-4" />

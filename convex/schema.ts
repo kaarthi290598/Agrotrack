@@ -136,5 +136,7 @@ export default defineSchema({
     hsnCode: v.optional(v.string()),
     /** Convex file storage id for invoice logo (PNG/SVG). */
     logoStorageId: v.optional(v.id("_storage")),
+    /** Convex file storage id for authorized signatory (blended PNG). */
+    signatureStorageId: v.optional(v.id("_storage")),
   }).index("by_org", ["orgId"]),
 });

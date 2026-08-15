@@ -3,6 +3,7 @@ import { getDBSettings, saveDBSettings } from "./db";
 import { api } from "../convex/_generated/api";
 import { getAuthedConvexClient } from "../lib/convex-client";
 import type { Id } from "../convex/_generated/dataModel";
+import { blendSignatureFile } from "../lib/blend-signature";
 
 function mapSettings(data: {
   hourlyRate: number;
@@ -22,6 +23,8 @@ function mapSettings(data: {
   hsnCode?: string;
   logoUrl?: string | null;
   logoStorageId?: string;
+  signatureUrl?: string | null;
+  signatureStorageId?: string;
 }): Settings {
   return {
     hourlyRate: data.hourlyRate,
@@ -41,6 +44,8 @@ function mapSettings(data: {
     hsnCode: data.hsnCode || undefined,
     logoUrl: data.logoUrl ?? null,
     logoStorageId: data.logoStorageId,
+    signatureUrl: data.signatureUrl ?? null,
+    signatureStorageId: data.signatureStorageId,
   };
 }
 
@@ -100,6 +105,32 @@ export const settingsService = {
   clearLogo: async (): Promise<Settings> => {
     const convex = await getAuthedConvexClient();
     await convex.mutation(api.settings.clearLogo, {});
+    return await settingsService.get();
+  },
+
+  uploadSignature: async (file: File): Promise<Settings> => {
+    const blended = await blendSignatureFile(file);
+    const convex = await getAuthedConvexClient();
+    const uploadUrl = await convex.mutation(
+      api.settings.generateSignatureUploadUrl,
+      {}
+    );
+    const result = await fetch(uploadUrl, {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: blended,
+    });
+    if (!result.ok) {
+      throw new Error("Failed to upload signature file.");
+    }
+    const { storageId } = (await result.json()) as { storageId: Id<"_storage"> };
+    await convex.mutation(api.settings.setSignature, { storageId });
+    return await settingsService.get();
+  },
+
+  clearSignature: async (): Promise<Settings> => {
+    const convex = await getAuthedConvexClient();
+    await convex.mutation(api.settings.clearSignature, {});
     return await settingsService.get();
   },
 };

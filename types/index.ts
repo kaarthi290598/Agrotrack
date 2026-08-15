@@ -173,6 +173,9 @@ export interface Settings {
   logoUrl?: string | null;
   /** Convex storage id — used when uploading/clearing logo. */
   logoStorageId?: string;
+  /** Resolved URL for authorized signatory image. */
+  signatureUrl?: string | null;
+  signatureStorageId?: string;
 }
 
 export interface DashboardStats {

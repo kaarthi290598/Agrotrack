@@ -26,6 +26,8 @@ const defaultSettings = {
   hsnCode: "",
   logoUrl: null as string | null,
   logoStorageId: undefined as string | undefined,
+  signatureUrl: null as string | null,
+  signatureStorageId: undefined as string | undefined,
 };
 
 async function highestUsedForPrefix(
@@ -79,6 +81,9 @@ export const get = query({
     const logoUrl = settings.logoStorageId
       ? await ctx.storage.getUrl(settings.logoStorageId)
       : null;
+    const signatureUrl = settings.signatureStorageId
+      ? await ctx.storage.getUrl(settings.signatureStorageId)
+      : null;
 
     return {
       hourlyRate: settings.hourlyRate,
@@ -101,6 +106,8 @@ export const get = query({
       hsnCode: settings.hsnCode ?? "",
       logoUrl,
       logoStorageId: settings.logoStorageId,
+      signatureUrl,
+      signatureStorageId: settings.signatureStorageId,
     };
   },
 });
@@ -256,5 +263,83 @@ export const clearLogo = mutation({
     }
 
     await ctx.db.patch(existing._id, { logoStorageId: undefined });
+  },
+});
+
+export const generateSignatureUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const setSignature = mutation({
+  args: {
+    storageId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await requireAdmin(ctx);
+    const existing = await ctx.db
+      .query("settings")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .first();
+
+    if (
+      existing?.signatureStorageId &&
+      existing.signatureStorageId !== args.storageId
+    ) {
+      try {
+        await ctx.storage.delete(existing.signatureStorageId);
+      } catch {
+        // Ignore missing previous file
+      }
+    }
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        signatureStorageId: args.storageId,
+        orgId,
+      });
+    } else {
+      await ctx.db.insert("settings", {
+        hourlyRate: defaultSettings.hourlyRate,
+        businessName: defaultSettings.businessName,
+        businessAddress: defaultSettings.businessAddress,
+        phoneNumber: defaultSettings.phoneNumber,
+        invoicePrefix: defaultSettings.invoicePrefix,
+        nextInvoiceNumber: defaultSettings.nextInvoiceNumber,
+        invoiceNumberDigits: defaultSettings.invoiceNumberDigits,
+        currencySymbol: defaultSettings.currencySymbol,
+        defaultTax: defaultSettings.defaultTax,
+        signatureStorageId: args.storageId,
+        orgId,
+      });
+    }
+
+    return { signatureUrl: await ctx.storage.getUrl(args.storageId) };
+  },
+});
+
+export const clearSignature = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const { orgId } = await requireAdmin(ctx);
+    const existing = await ctx.db
+      .query("settings")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .first();
+
+    if (!existing) return;
+
+    if (existing.signatureStorageId) {
+      try {
+        await ctx.storage.delete(existing.signatureStorageId);
+      } catch {
+        // Ignore missing file
+      }
+    }
+
+    await ctx.db.patch(existing._id, { signatureStorageId: undefined });
   },
 });

@@ -17,6 +17,7 @@ export const defaultSettings: Settings = {
   footerText: "",
   hsnCode: "",
   logoUrl: null,
+  signatureUrl: null,
 };
 
 export const mockCustomers: Customer[] = [
