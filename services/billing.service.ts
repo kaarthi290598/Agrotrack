@@ -34,6 +34,7 @@ export const billingService = {
       paymentMode: b.paymentMode,
       amountPaid: b.amountPaid,
       balanceAmount: b.balanceAmount,
+      outsideTamilNadu: Boolean(b.outsideTamilNadu),
       createdBy: b.createdBy,
       createdByEmail: b.createdByEmail,
       createdAt: b.createdAt,

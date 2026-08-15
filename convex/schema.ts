@@ -89,6 +89,8 @@ export default defineSchema({
     ),
     amountPaid: v.optional(v.number()),
     balanceAmount: v.optional(v.number()),
+    /** Interstate supply: invoice uses IGST instead of CGST+SGST. */
+    outsideTamilNadu: v.optional(v.boolean()),
     createdBy: v.optional(v.string()),
     createdByEmail: v.optional(v.string()),
     createdAt: v.number(),

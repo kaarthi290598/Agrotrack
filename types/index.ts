@@ -140,6 +140,8 @@ export interface Bill {
   paymentMode?: PaymentMode;
   amountPaid?: number;
   balanceAmount?: number;
+  /** Interstate supply — Tax Invoice shows IGST instead of CGST + SGST. */
+  outsideTamilNadu?: boolean;
   createdBy?: string;
   createdByEmail?: string;
   createdAt: number;

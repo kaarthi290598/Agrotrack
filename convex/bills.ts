@@ -310,6 +310,7 @@ export const create = mutation({
     paymentMode: v.optional(paymentModeValidator),
     amountPaid: v.optional(v.number()),
     balanceAmount: v.optional(v.number()),
+    outsideTamilNadu: v.optional(v.boolean()),
     createdBy: v.optional(v.string()),
     createdByEmail: v.optional(v.string()),
   },
@@ -340,6 +341,7 @@ export const create = mutation({
       endDate: args.endDate || args.date,
       ertNumber,
       paymentMode,
+      outsideTamilNadu: Boolean(args.outsideTamilNadu),
       status,
       orgId,
       createdBy: args.createdBy || clerkUserId,
@@ -413,6 +415,7 @@ export const update = mutation({
     paymentMode: v.optional(paymentModeValidator),
     amountPaid: v.optional(v.number()),
     balanceAmount: v.optional(v.number()),
+    outsideTamilNadu: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { orgId, role, clerkUserId, userId } = await requireOrgMember(ctx);

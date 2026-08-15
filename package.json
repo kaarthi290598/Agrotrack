@@ -9,7 +9,8 @@
     "lint": "eslint",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
-    "check:env": "node scripts/check-env-pairing.mjs"
+    "check:env": "node scripts/check-env-pairing.mjs",
+    "docs:user-guide": "md-to-pdf docs/user-guide.md --config-file docs/md-to-pdf.config.cjs --document-title \"Arkit Vedham India — User Guide\" && mv -f docs/user-guide.pdf docs/Arkit-User-Guide.pdf"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.22",
@@ -37,6 +38,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "md-to-pdf": "^5.2.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -113,6 +113,7 @@ export const exportData = query({
         createdBy: b.createdBy ?? "",
         createdByEmail: b.createdByEmail ?? "",
         createdAt: b.createdAt,
+        outsideTamilNadu: Boolean(b.outsideTamilNadu),
         activityLog: b.activityLog ?? [],
       })),
       settings: settings
@@ -187,6 +188,7 @@ export const restoreData = mutation({
         createdBy: v.optional(v.string()),
         createdByEmail: v.optional(v.string()),
         createdAt: v.number(),
+        outsideTamilNadu: v.optional(v.boolean()),
         activityLog: v.optional(
           v.array(
             v.object({
@@ -303,6 +305,7 @@ export const restoreData = mutation({
         createdBy: emptyToUndefined(b.createdBy),
         createdByEmail: emptyToUndefined(b.createdByEmail),
         createdAt: b.createdAt,
+        outsideTamilNadu: Boolean(b.outsideTamilNadu),
         activityLog: b.activityLog,
       });
       billsInserted++;

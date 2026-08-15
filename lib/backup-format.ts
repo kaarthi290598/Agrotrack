@@ -37,6 +37,7 @@ export type BackupBillRow = {
   createdBy: string;
   createdByEmail: string;
   createdAt: number;
+  outsideTamilNadu: string;
   activityLog: string; // JSON
 };
 
@@ -63,8 +64,9 @@ export type BackupSnapshot = {
   endDate?: string;
   customers: BackupCustomerRow[];
   bills: Array<
-    Omit<BackupBillRow, "extraCharges" | "activityLog"> & {
+    Omit<BackupBillRow, "extraCharges" | "activityLog" | "outsideTamilNadu"> & {
       extraCharges: { id: string; name: string; amount: number }[];
+      outsideTamilNadu?: boolean;
       activityLog?: Array<{
         at: number;
         byName: string;
@@ -123,6 +125,7 @@ export type RestorePayload = {
     createdBy?: string;
     createdByEmail?: string;
     createdAt: number;
+    outsideTamilNadu?: boolean;
     activityLog?: Array<{
       at: number;
       byName: string;
@@ -192,6 +195,7 @@ export const BILL_HEADERS = [
   "createdBy",
   "createdByEmail",
   "createdAt",
+  "outsideTamilNadu",
   "activityLog",
 ] as const;
 
@@ -251,6 +255,7 @@ export function billsToRows(bills: BackupSnapshot["bills"]) {
     createdBy: b.createdBy ?? "",
     createdByEmail: b.createdByEmail ?? "",
     createdAt: b.createdAt,
+    outsideTamilNadu: b.outsideTamilNadu ? "true" : "false",
     activityLog: JSON.stringify(b.activityLog ?? []),
   }));
 }
@@ -501,6 +506,9 @@ export function rowsToRestorePayload(input: {
       createdBy: optStr(r.createdBy),
       createdByEmail: optStr(r.createdByEmail),
       createdAt: num(r.createdAt, Date.now()),
+      outsideTamilNadu: ["true", "1", "yes"].includes(
+        String(r.outsideTamilNadu ?? "").trim().toLowerCase()
+      ),
       activityLog: parseActivityLog(r.activityLog),
     };
   });

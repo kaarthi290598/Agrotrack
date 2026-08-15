@@ -6,6 +6,7 @@ import { PdfPaymentBadge } from "./PdfPaymentBadge";
 import { amountInWords } from "../../lib/amount-in-words";
 import {
   computeInvoiceTax,
+  formatHalfTaxRate,
   formatInvoiceDate,
   formatInvoiceMoney,
 } from "../../lib/invoice-tax";
@@ -33,7 +34,11 @@ function InvoiceBody({
   currencySymbol,
   compact = false,
 }: InvoiceDocumentProps & { compact?: boolean }) {
-  const tax = computeInvoiceTax(bill.grandTotal, settings.defaultTax);
+  const tax = computeInvoiceTax(
+    bill.grandTotal,
+    settings.defaultTax,
+    bill.outsideTamilNadu
+  );
   const hsn = settings.hsnCode?.trim() || "-";
   const taxLabel =
     tax.taxRate > 0 ? `${tax.taxRate % 1 === 0 ? tax.taxRate : tax.taxRate.toFixed(2)}%` : "-";
@@ -54,8 +59,8 @@ function InvoiceBody({
               crossOrigin="anonymous"
               className={
                 compact
-                  ? "h-20 w-20 object-contain shrink-0"
-                  : "h-28 w-28 object-contain shrink-0"
+                  ? "h-28 w-28 object-contain shrink-0"
+                  : "h-44 w-44 object-contain shrink-0"
               }
             />
           )}
@@ -223,34 +228,30 @@ function InvoiceBody({
             <span>Subtotal</span>
             <span>{money(tax.subtotal)}</span>
           </div>
-          {tax.taxRate > 0 && (
+          {tax.isInterstate ? (
+            <div className="flex justify-between text-slate-700">
+              <span>
+                IGST (
+                {tax.taxRate % 1 === 0 ? tax.taxRate : tax.taxRate.toFixed(2)}%)
+              </span>
+              <span>{money(tax.igst)}</span>
+            </div>
+          ) : (
             <>
               <div className="flex justify-between text-slate-700">
-                <span>
-                  CGST (
-                  {tax.taxRate / 2 === Math.floor(tax.taxRate / 2)
-                    ? tax.taxRate / 2
-                    : (tax.taxRate / 2).toFixed(2)}
-                  %)
-                </span>
+                <span>CGST ({formatHalfTaxRate(tax.taxRate)}%)</span>
                 <span>{money(tax.cgst)}</span>
               </div>
               <div className="flex justify-between text-slate-700">
-                <span>
-                  SGST (
-                  {tax.taxRate / 2 === Math.floor(tax.taxRate / 2)
-                    ? tax.taxRate / 2
-                    : (tax.taxRate / 2).toFixed(2)}
-                  %)
-                </span>
+                <span>SGST ({formatHalfTaxRate(tax.taxRate)}%)</span>
                 <span>{money(tax.sgst)}</span>
-              </div>
-              <div className="flex justify-between text-slate-700">
-                <span>Total Tax</span>
-                <span>{money(tax.tax)}</span>
               </div>
             </>
           )}
+          <div className="flex justify-between text-slate-700">
+            <span>Total Tax</span>
+            <span>{money(tax.tax)}</span>
+          </div>
           <div className="flex justify-between items-center bg-slate-100 border border-slate-300 px-2 py-2 font-bold text-sm text-emerald-700 mt-1">
             <span>Grand Total</span>
             <span>{money(tax.invoiceTotal)}</span>

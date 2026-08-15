@@ -8,16 +8,37 @@ export type InvoiceTaxBreakdown = {
   tax: number;
   cgst: number;
   sgst: number;
+  igst: number;
+  isInterstate: boolean;
   invoiceTotal: number;
 };
 
+export function formatHalfTaxRate(taxRate: number): string {
+  const half = taxRate / 2;
+  return half === Math.floor(half) ? String(half) : half.toFixed(2);
+}
+
 export function computeInvoiceTax(
   grandTotal: number,
-  defaultTax: number
+  defaultTax: number,
+  outsideTamilNadu = false
 ): InvoiceTaxBreakdown {
   const subtotal = roundRupeeNonNegative(grandTotal);
   const taxRate = Math.max(0, Number(defaultTax) || 0);
   const tax = taxRate > 0 ? roundRupee((subtotal * taxRate) / 100) : 0;
+  const isInterstate = Boolean(outsideTamilNadu);
+  if (isInterstate) {
+    return {
+      subtotal,
+      taxRate,
+      tax,
+      cgst: 0,
+      sgst: 0,
+      igst: tax,
+      isInterstate,
+      invoiceTotal: subtotal + tax,
+    };
+  }
   const cgst = roundRupee(tax / 2);
   const sgst = tax - cgst; // keep CGST+SGST = tax after round
   return {
@@ -26,6 +47,8 @@ export function computeInvoiceTax(
     tax,
     cgst,
     sgst,
+    igst: 0,
+    isInterstate,
     invoiceTotal: subtotal + tax,
   };
 }

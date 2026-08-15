@@ -101,6 +101,7 @@ function BillingFormInner() {
   const [paymentMode, setPaymentMode] = useState<PaymentMode | "">("");
   const [partialPaidAmount, setPartialPaidAmount] = useState<string>("");
   const [ertNumber, setErtNumber] = useState<string>("");
+  const [outsideTamilNadu, setOutsideTamilNadu] = useState(false);
   
   // Custom Charge Input States
   const [chargeName, setChargeName] = useState("");
@@ -211,6 +212,7 @@ function BillingFormInner() {
               setAdditionalCharges(foundBill.extraCharges || []);
               setPaymentStatus(foundBill.paymentStatus || "UNPAID");
               setPaymentMode(foundBill.paymentMode || "");
+              setOutsideTamilNadu(Boolean(foundBill.outsideTamilNadu));
               setActiveTab("express");
             } else {
               setEditingBillId(foundBill.id);
@@ -235,6 +237,7 @@ function BillingFormInner() {
               setAdditionalCharges(foundBill.extraCharges || []);
               setPaymentStatus(foundBill.paymentStatus || "UNPAID");
               setPaymentMode(foundBill.paymentMode || "");
+              setOutsideTamilNadu(Boolean(foundBill.outsideTamilNadu));
               if (foundBill.amountPaid !== undefined) {
                 setPartialPaidAmount(String(foundBill.amountPaid));
               }
@@ -535,6 +538,7 @@ function BillingFormInner() {
         ertNumber: validErt,
         status: "IN_PROGRESS",
         paymentStatus: "UNPAID",
+        outsideTamilNadu,
         createdBy: user?.fullName || user?.primaryEmailAddress || "Operator",
         createdByEmail: user?.primaryEmailAddress || ""
       }, orgId || undefined);
@@ -578,6 +582,7 @@ function BillingFormInner() {
     setEditingInvoiceNum(bill.invoiceNumber || "");
     setEditingBillStatus(bill.status);
     setErtNumber(bill.ertNumber || "");
+    setOutsideTamilNadu(Boolean(bill.outsideTamilNadu));
     setActiveTab("express");
 
     toast({
@@ -688,7 +693,8 @@ function BillingFormInner() {
           paymentStatus,
           paymentMode: paymentMode || undefined,
           amountPaid: calculatedAmountPaid,
-          balanceAmount: calculatedBalance
+          balanceAmount: calculatedBalance,
+          outsideTamilNadu,
         });
 
         if (paymentStatus === "PAID" && updatedBill.invoiceNumber) {
@@ -739,6 +745,7 @@ function BillingFormInner() {
         paymentMode: paymentMode || undefined,
         amountPaid: calculatedAmountPaid,
         balanceAmount: calculatedBalance,
+        outsideTamilNadu,
         createdBy: user?.fullName || user?.primaryEmailAddress || "Operator",
         createdByEmail: user?.primaryEmailAddress || ""
       }, orgId || undefined);
@@ -790,6 +797,7 @@ function BillingFormInner() {
     setPaymentMode("");
     setPartialPaidAmount("");
     setErtNumber("");
+    setOutsideTamilNadu(false);
     setEditingBillId(null);
     setEditingInvoiceNum("");
     setEditingBillStatus(null);
@@ -1264,6 +1272,25 @@ function BillingFormInner() {
                   placeholder="0"
                   error={discountVal > (usageCost + extraChargesCost) ? "Discount exceeds bill total" : undefined}
                 />
+
+                <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50 px-3 py-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={outsideTamilNadu}
+                    onChange={(e) => setOutsideTamilNadu(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span>
+                    <span className="block text-xs font-bold text-slate-800 dark:text-slate-100">
+                      Outside Tamil Nadu?
+                    </span>
+                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {outsideTamilNadu
+                        ? "Invoice tax will show as IGST."
+                        : "Invoice tax will split as CGST and SGST."}
+                    </span>
+                  </span>
+                </label>
 
                 {/* Grand Total Display */}
                 <div className="pt-2 border-t-2 border-dashed border-slate-200 dark:border-slate-800">
